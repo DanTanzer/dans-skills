@@ -1,0 +1,14 @@
+{
+  "name": "dans-skills",
+  "description": "Claude Code skills by Dan Tanzer",
+  "owner": {
+    "name": "Dan Tanzer"
+  },
+  "plugins": [
+    {
+      "name": "dans-skills",
+      "source": "./",
+      "description": "Claude Code skills by Dan Tanzer"
+    }
+  ]
+}

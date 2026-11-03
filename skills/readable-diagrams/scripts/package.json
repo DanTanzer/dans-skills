@@ -1,0 +1,10 @@
+{
+  "name": "readable-diagrams-export",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Photographs figlib figures with the Mac's own Chrome. Installed by doctor.sh --install, never committed.",
+  "type": "module",
+  "dependencies": {
+    "puppeteer": "19.11.1"
+  }
+}

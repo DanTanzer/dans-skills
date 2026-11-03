@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python and Node
+__pycache__/
+*.pyc
+node_modules/
+
+# Local tool state, never committed
+.claude/
+.gc/
+.beads/
+*.gate.lock*
