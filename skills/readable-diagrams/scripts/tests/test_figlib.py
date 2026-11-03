@@ -2,6 +2,8 @@
 import contextlib
 import io
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +15,28 @@ SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS)
 import figlib  # noqa: E402
 import render  # noqa: E402
+
+# A stand-in for puppeteer: enough for Node to find it, load it and read its version.
+FAKE_PUPPETEER = {
+    "package.json": '{"name": "puppeteer", "version": "0.0.0-test", "exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}',
+    "index.mjs": "export default {};\n",
+    "index.cjs": "module.exports = {};\n",
+}
+
+
+def fake_puppeteer(node_modules):
+    folder = os.path.join(node_modules, "puppeteer")
+    os.makedirs(folder)
+    for name, body in FAKE_PUPPETEER.items():
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as handle:
+            handle.write(body)
+
+
+def doctor_copy(scripts_dir):
+    """A copy of doctor.sh in scripts_dir, so the doctor asks Node from there."""
+    os.makedirs(scripts_dir)
+    shutil.copy(os.path.join(SCRIPTS, "doctor.sh"), scripts_dir)
+    return os.path.join(scripts_dir, "doctor.sh")
 
 
 class ExampleBuildsTest(unittest.TestCase):
@@ -77,6 +101,17 @@ class FitChecksTest(unittest.TestCase):
             figlib.line(0, 0, 1, 1, "http", "p")
 
 
+class ZoneTitleTest(unittest.TestCase):
+    # Real widths, measured in Chrome in the zone title style: Arial bold capitals, 13px, 0.1 em letter-spacing.
+    MEASURED = {"MVP SHORTCUT": 119.4, "MOMENTUM": 88.4}
+
+    def test_a_zone_subtitle_starts_clear_of_its_title(self):
+        for title, real in self.MEASURED.items():
+            svg = figlib.Canvas("z", 1000, 120, "z").zone(0, 0, 600, 100, title, "start here").svg()
+            sub_x = float(re.search(r'<text class="ts" x="([\d.]+)"', svg).group(1))
+            self.assertGreaterEqual(sub_x - 18 - real, 16, f"{title}: the subtitle starts too close")
+
+
 class SampleBuildsTest(unittest.TestCase):
     def test_the_sample_builds_both_figures_with_mermaid(self):
         out = tempfile.mkdtemp()
@@ -95,15 +130,60 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("not found at /nonexistent/chrome", done.stdout)
         self.assertIn("→ install Google Chrome", done.stdout)
 
+    @unittest.skipUnless(shutil.which("node"), "the puppeteer check needs Node")
+    def test_a_puppeteer_in_a_folder_above_the_scripts_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.realpath(tmp)
+            fake_puppeteer(os.path.join(repo, "node_modules"))
+            doctor = doctor_copy(os.path.join(repo, ".claude", "skills", "readable-diagrams", "scripts"))
+            done = subprocess.run(["bash", doctor], capture_output=True, text=True)
+        self.assertIn(f"puppeteer   0.0.0-test, in {repo}/node_modules", done.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "the puppeteer check needs Node")
+    def test_a_puppeteer_node_cannot_find_is_named_with_one_install_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doctor = doctor_copy(os.path.join(os.path.realpath(tmp), "scripts"))
+            done = subprocess.run(["bash", doctor], capture_output=True, text=True)
+        self.assertEqual(1, done.returncode)
+        self.assertIn("puppeteer   Node cannot find it from the scripts folder", done.stdout)
+        self.assertIn(f"→ bash {doctor} --install", done.stdout)
+
 
 class RenderShowsTheDoctorTest(unittest.TestCase):
-    def test_a_missing_puppeteer_prints_the_doctor_report(self):
-        out, said = tempfile.mkdtemp(), io.StringIO()
-        with mock.patch.object(render, "puppeteer_installed", return_value=False), contextlib.redirect_stdout(said):
+    def test_a_puppeteer_node_cannot_load_prints_the_doctor_report(self):
+        node_says = "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'puppeteer' imported from /x/export_png.mjs"
+        failed = subprocess.CompletedProcess([], 1, "", node_says)
+        with tempfile.TemporaryDirectory() as out, mock.patch.object(render, "export", return_value=failed), \
+                contextlib.redirect_stdout(io.StringIO()) as said:
             code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), out])
         self.assertEqual(1, code)
         self.assertIn("The PNG export cannot run yet. The doctor says:", said.getvalue())
         self.assertIn("readable-diagrams doctor: can this Mac export pictures?", said.getvalue())
+
+
+class RenderPathsTest(unittest.TestCase):
+    def test_a_relative_out_folder_reaches_the_exporter_in_full(self):
+        calls = []
+
+        def node_run(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0, "wrote a\nwrote b\nwrote c\n", "")
+
+        start = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            work = os.path.realpath(tmp)
+            try:
+                os.chdir(work)
+                with mock.patch.object(render.subprocess, "run", node_run), contextlib.redirect_stdout(io.StringIO()):
+                    code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), "out"])
+            finally:
+                os.chdir(start)
+        self.assertEqual(0, code)
+        self.assertEqual(2, len(calls))
+        for command, kwargs in calls:
+            self.assertEqual(os.path.join(work, "out", "figures.html"), command[2])
+            self.assertEqual(os.path.join(work, "out", "figures"), command[3])
+            self.assertEqual(render.HERE, kwargs["cwd"])
 
 
 class PictureBlockTest(unittest.TestCase):

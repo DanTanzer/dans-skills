@@ -18,7 +18,9 @@ import re
 # Widths of one character at each size, for Arial (words) and Menlo (names), which every Mac has.
 # For Arial they sit near the median: measured in Chrome on the example's 115 labels, a label of eight or more
 # characters runs 0.84 to 1.22 times its estimate. Menlo advances 0.6 em, so its three widths are exact.
-CHAR_W = {"t": 6.2, "tb": 7.0, "ts": 5.6, "sm": 5.6, "tm": 8.4, "tmb": 9.0, "tmsm": 7.5, "zt": 8.0}
+# zt, the zone title, is bold capitals with 0.1 em letter-spacing, and sits near the top instead: measured in Chrome
+# on 39 such titles, it runs 8.7 to 11.1 a character, median 10.0, and only 6 of the 39 run past 10.4.
+CHAR_W = {"t": 6.2, "tb": 7.0, "ts": 5.6, "sm": 5.6, "tm": 8.4, "tmb": 9.0, "tmsm": 7.5, "zt": 10.4}
 
 
 class FigureError(Exception):
@@ -40,7 +42,7 @@ def width_of(s, cls="t"):
         key = "ts"
     else:
         key = "t"
-    return len(s) * CHAR_W[key]
+    return round(len(s) * CHAR_W[key], 1)
 
 
 def must_fit(s, room, cls="t", where=""):
@@ -101,7 +103,8 @@ class Canvas:
             if sub_anchor == "end":
                 self.el.append(text(x + w - 16, y + 24, sub, "ts", "end"))
             else:
-                self.el.append(text(x + 18 + width_of(title, "zt") + 22, y + 24, sub, "ts"))
+                # 24 after the estimate leaves even the widest-lettered title about 19 clear of its subtitle
+                self.el.append(text(x + 18 + width_of(title, "zt") + 24, y + 24, sub, "ts"))
         return self
 
     def box(self, x, y, w, h, title, lines=(), muted_last=False):
