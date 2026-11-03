@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that this Mac can export readable-diagrams pictures, and says what to do about anything missing.
 #   bash doctor.sh             check only: changes nothing
-#   bash doctor.sh --install   also install what the skill owns: puppeteer, next to these scripts, with no browser download
+#   bash doctor.sh --install   also install puppeteer next to these scripts, if Node cannot load it from here; no browser download
 # Exit 0 when every required check passes, 1 when something required is missing, 2 for an unknown option.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,6 +9,33 @@ CHROME="${CHROME_PATH:-/Applications/Google Chrome.app/Contents/MacOS/Google Chr
 NODE_MIN="14.14.0"
 if [ "$PWD" = "$HERE" ]; then SELF="doctor.sh"; else SELF="$HERE/doctor.sh"; fi
 case "$SELF" in *" "*) SELF="\"$SELF\"" ;; esac
+
+# The export's own question, asked of Node from this folder: can it load puppeteer, and which copy? Node looks in
+# node_modules here and in every folder above, so a puppeteer in the repo's own node_modules counts too. The probe
+# prints the version and where it was found, or why not, and exits 1 when Node cannot load it.
+IFS= read -r -d '' PROBE <<'JS'
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
+try {
+  await import('puppeteer');
+} catch (err) {
+  const missing = err.code === 'ERR_MODULE_NOT_FOUND' && String(err.message).includes("'puppeteer'");
+  console.log(missing ? 'Node cannot find it from the scripts folder' : 'found, but it does not load: ' + String(err.message).split('\n')[0]);
+  process.exit(1);
+}
+try {
+  const entry = createRequire(join(process.cwd(), 'probe.js')).resolve('puppeteer');
+  const marker = sep + 'node_modules' + sep + 'puppeteer' + sep;
+  const root = entry.slice(0, entry.lastIndexOf(marker) + marker.length - 1);
+  const folder = dirname(root);
+  const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  console.log(version + (folder === join(process.cwd(), 'node_modules') ? ', next to the scripts' : ', in ' + folder));
+} catch {
+  console.log('loads');
+}
+JS
+puppeteer_check() { (cd "$HERE" && node --input-type=module -e "$PROBE" 2>/dev/null); }
 
 INSTALL=0
 case "${1:-}" in
@@ -33,7 +60,7 @@ warn() { line "$HMM" "$1" "$2"; todo "$3"; warnings=$((warnings + 1)); }
 at_least() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]; }  # is version $1 at least $2
 found_one() { for f in "$@"; do [ -e "$f" ] && return 0; done; return 1; }
 
-if [ "$INSTALL" = 1 ] && [ ! -d "$HERE/node_modules/puppeteer" ]; then
+if [ "$INSTALL" = 1 ] && ! puppeteer_check >/dev/null; then
   if command -v npm >/dev/null 2>&1; then
     echo "Installing puppeteer next to the scripts, with no browser download..."
     if (cd "$HERE" && PUPPETEER_SKIP_DOWNLOAD=1 npm install --ignore-scripts --no-audit --no-fund >/dev/null 2>&1); then
@@ -92,11 +119,12 @@ else
   warn "Menlo" "not found; file names use another mono font" "nothing to fix: mono fonts share the same widths"
 fi
 
-pkg="$HERE/node_modules/puppeteer/package.json"
-if [ -f "$pkg" ]; then
-  line "$YES" "puppeteer" "$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$pkg" | head -n 1), next to the scripts"
+if ! command -v node >/dev/null 2>&1; then
+  fail "puppeteer" "not checked: Node is missing" "install Node, then run: bash $SELF --install"
+elif found="$(puppeteer_check)"; then
+  line "$YES" "puppeteer" "$found"
 else
-  fail "puppeteer" "not installed next to the scripts" "bash $SELF --install"
+  fail "puppeteer" "${found:-Node could not run the check}" "bash $SELF --install"
 fi
 
 echo

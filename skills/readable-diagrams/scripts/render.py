@@ -12,12 +12,21 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+EXPORTER = os.path.join(HERE, "export_png.mjs")
 sys.path.insert(0, HERE)
 import figlib  # noqa: E402
 
 
-def puppeteer_installed():
-    return os.path.isdir(os.path.join(HERE, "node_modules", "puppeteer"))
+def export(page, png_dir, theme):
+    """Runs export_png.mjs for one theme. Node runs in this folder, so both paths go to it in full: a relative path
+    would point inside the scripts folder instead of the folder the command was run from."""
+    command = ["node", EXPORTER, os.path.abspath(page), os.path.abspath(png_dir), theme]
+    return subprocess.run(command, capture_output=True, text=True, cwd=HERE)
+
+
+def cannot_load_puppeteer(stderr):
+    """True when Node says export_png.mjs cannot find puppeteer from where it sits."""
+    return "ERR_MODULE_NOT_FOUND" in stderr and "'puppeteer'" in stderr
 
 
 def doctor_report():
@@ -57,16 +66,15 @@ def main(argv):
     print(f"built {len(figures)} figure(s) in {out_dir}: " + ", ".join(f["stem"] for f in figures))
     if not want_png:
         return 0
-    exporter = os.path.join(HERE, "export_png.mjs")
-    if not puppeteer_installed():
-        return stop_with_doctor("The PNG export cannot run yet.")
     page = os.path.join(out_dir, "figures.html")
     png_dir = os.path.join(out_dir, "figures")
     for theme in ("light", "dark"):
         try:
-            done = subprocess.run(["node", exporter, page, png_dir, theme], capture_output=True, text=True, cwd=HERE)
+            done = export(page, png_dir, theme)
         except FileNotFoundError:
             return stop_with_doctor("node was not found, so the PNG export cannot run.")
+        if done.returncode != 0 and cannot_load_puppeteer(done.stderr):
+            return stop_with_doctor("The PNG export cannot run yet.")
         wrote = [ln for ln in done.stdout.splitlines() if ln.startswith("wrote")]
         if done.returncode != 0 or len(wrote) != len(figures):
             print(f"export failed for {theme}:")

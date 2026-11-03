@@ -200,6 +200,8 @@ PNGs in out/figures. Look at each one once before you ship it.
 
 Because the packages live inside the skill's folder, the install runs once per copy of the skill. An installed plugin is its own copy, so it needs its own install.
 
+`puppeteer` does not have to live in the skill's folder. The doctor asks Node to load `puppeteer` from the scripts folder, the same way the export does. Node looks for a `node_modules` folder in the scripts folder and in every folder above it, so a `puppeteer` in your repo's own `node_modules` works too.
+
 Add `--no-png` to stop after the SVG and the page. `SKILL.md` has Claude build that way first. Text that does not fit then shows up before Chrome starts.
 
 Steps 3 to 5 all happen inside this one `render.py` command. `render.py` does four things:
@@ -328,7 +330,7 @@ The two skill pictures on this page are such blocks.
 | `scripts/doctor.sh` | bash | Checks the Mac; `--install` installs `puppeteer` once per copy, without a browser download |
 | `scripts/package.json` | JSON (a data file), for npm | The one dependency: `puppeteer` `19.11.1` |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_figlib.py` | Python | 14 tests: the example and the sample build, the checks refuse what they should, and the doctor reports what is missing |
+| `scripts/tests/test_figlib.py` | Python | 18 tests: the example and the sample build, the checks refuse what they should, a zone subtitle stays clear of its title, the doctor finds `puppeteer` where Node does, and a relative output folder works |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new figure |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
 

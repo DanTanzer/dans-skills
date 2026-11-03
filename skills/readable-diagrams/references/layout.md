@@ -9,11 +9,11 @@ The numbers behind `example_spec.py`, so a new figure can start from them instea
 | `tb` | a box title, a lifeline name, a person | 15px bold | 7.0 |
 | `t` | a plain line, an arrow label | 14px | 6.2 |
 | `ts` | a muted aside, a zone subtitle | 12.5px muted | 5.6 |
-| `zt` | a zone title, uppercase, letter-spaced | 13px bold | 8.0 |
+| `zt` | a zone title, uppercase, letter-spaced | 13px bold | 10.4 |
 | `tm tb` | a file or folder name in a big store box | 15px mono bold | 9.0 |
 | `tm tb sm` | a file name in a small store box | 12.5px mono bold | 7.5 |
 
-`figlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that.
+`figlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that. `zt` is the exception: it sits near the widest capitals, because a subtitle that follows the title is placed by it.
 
 ## A data flow with machines across the top and a store across the bottom
 
