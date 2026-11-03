@@ -43,6 +43,22 @@ claude plugin install dans-skills --marketplace DanTanzer/dans-skills
 
 Then type `/reload-plugins` in the session. The one-step line needs Claude Code 2.1.275 or later. On an older version, run `claude plugin marketplace add DanTanzer/dans-skills`, then `claude plugin install dans-skills@dans-skills`.
 
+### With the skills CLI
+
+You can also install the skill with Vercel's [`skills`](https://github.com/vercel-labs/skills) CLI.
+
+For all your projects:
+
+```bash
+npx skills add DanTanzer/dans-skills --skill readable-diagrams -a claude-code -g
+```
+
+For the repo you're in:
+
+```bash
+npx skills add DanTanzer/dans-skills --skill readable-diagrams -a claude-code
+```
+
 ## Before the first picture
 
 The PNG export needs Node and Google Chrome on the Mac. Before the first export, Claude runs the skill's `scripts/doctor.sh` to check the Mac, then `scripts/doctor.sh --install` once, in the skill's own folder, to install `puppeteer`.
@@ -51,7 +67,7 @@ The PNG export needs Node and Google Chrome on the Mac. Before the first export,
 
 ## Contributing
 
-How the repo is laid out, and how to check a change: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+To fix a skill or add a new one, start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 

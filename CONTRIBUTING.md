@@ -1,8 +1,6 @@
 # Contributing
 
-How this repo is laid out, and how to check a change.
-
-## How the repo is laid out
+## Repository layout
 
 The repository, its marketplace and its one plugin all share one name: `dans-skills`. Each skill is a folder under `skills/`.
 
