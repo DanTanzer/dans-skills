@@ -1,8 +1,9 @@
 """figlib: hand-laid-out SVG figures in one house style, for data flow and sequence pictures.
 
 A figure is Python that places every box and arrow (a data flow) or a list of rows (a sequence). The library turns it
-into SVG with one set of CSS tokens for light and dark, builds one HTML page that holds every figure with the arrow
-legend, and writes the Mermaid fallback text. export_png.mjs then photographs each figure card from that page.
+into one self-contained SVG per theme, light and dark: the figure on its card, under the legend entries for the arrow
+kinds it uses, with the house style inside the file. Any SVG reader draws such a file the same way, and render.py
+turns each one into a PNG with rsvg-convert. figlib also writes the Mermaid fallback text.
 
 Why hand layout and not Mermaid: Mermaid places every box itself, so lines can cross and labels sit on top of
 the lines, and it has no legend. A picture that people read again and again is worth placing by hand.
@@ -11,16 +12,34 @@ Standard library only. Every width check uses an average character width for Ari
 overflows fails here, at build time; the look at each PNG catches one that is close.
 """
 import html
+import math
 import os
 import re
 
 # ====================================================================================== text measurement
 # Widths of one character at each size, for Arial (words) and Menlo (names), which every Mac has.
 # For Arial they sit near the median: measured in Chrome on the example's 115 labels, a label of eight or more
-# characters runs 0.84 to 1.22 times its estimate. Menlo advances 0.6 em, so its three widths are exact.
+# characters runs 0.84 to 1.22 times its estimate. Menlo advances 0.602 em, so its three widths are exact.
 # zt, the zone title, is bold capitals with 0.1 em letter-spacing, and sits near the top instead: measured in Chrome
 # on 39 such titles, it runs 8.7 to 11.1 a character, median 10.0, and only 6 of the 39 run past 10.4.
-CHAR_W = {"t": 6.2, "tb": 7.0, "ts": 5.6, "sm": 5.6, "tm": 8.4, "tmb": 9.0, "tmsm": 7.5, "zt": 10.4}
+# rsvg-convert, which draws the PNGs now, lays text out exactly as Chrome did: on 145 labels and titles, every advance
+# matches Chrome's within 0.05 percent, except that a letter-spaced title ends 1.3 sooner: rsvg adds no space after
+# the last letter. So these widths stand.
+CHAR_W = {"t": 6.2, "tb": 7.0, "ts": 5.6, "sm": 5.6, "tm": 8.43, "tmb": 9.03, "tmsm": 7.53, "zt": 10.4}
+
+# Arial's advance for each printable ASCII character, space to tilde, in 1/2048 em, read from Arial.ttf. Only the
+# legend uses these: its entries sit 18 apart like words, so it needs each text's real width, not an average.
+ARIAL_ADVANCE = dict(zip(map(chr, range(32, 127)), map(int, (
+    "569 569 727 1139 1139 1821 1366 391 682 682 797 1196 569 682 569 569 1139 1139 1139 1139 1139 1139 1139 1139 "
+    "1139 1139 569 569 1196 1196 1196 1139 2079 1366 1366 1479 1479 1366 1251 1593 1479 569 1024 1366 1139 1706 1479 "
+    "1593 1366 1593 1479 1366 1251 1479 1366 1933 1366 1366 1251 569 569 569 961 1139 682 1139 1139 1024 1139 1139 "
+    "569 1139 1139 455 455 1024 455 1706 1139 1139 1139 1139 682 1024 569 1139 1024 1479 1024 1024 1024 684 532 684 "
+    "1196").split())))
+
+
+def arial_width(s, size=14):
+    """The width of s in Arial at size, from the font's own advances. A character outside ASCII counts as 0.6 em."""
+    return round(sum(ARIAL_ADVANCE.get(ch, 1229) for ch in s) * size / 2048, 1)
 
 
 class FigureError(Exception):
@@ -59,14 +78,13 @@ def esc(s):
 ARROW_KINDS = ("file", "ring", "say", "loc")
 
 
-def svg_open(width, height, pfx, label, wide=False):
+def svg_open(width, height, pfx, label):
     markers = "".join(
         f'<marker id="ah-{k}-{pfx}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="{s}" markerHeight="{s}" orient="auto-start-reverse">'
         f'<path d="M0 0 L10 5 L0 10 z" class="mk-{k}"/></marker>'
         for k, s in (("file", 5), ("ring", 5), ("say", 5), ("loc", 6))
     )
-    return (f'<svg viewBox="0 0 {width} {height}" class="{"wide" if wide else ""}" role="img" aria-label="{esc(label)}">'
-            f"<defs>{markers}</defs>")
+    return f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{esc(label)}"><defs>{markers}</defs>'
 
 
 def line(x1, y1, x2, y2, kind, pfx, both=False):
@@ -81,6 +99,32 @@ def text(x, y, s, cls="t", anchor="start", halo=False):
     return f'<text class="{classes}" x="{x}" y="{y}" text-anchor="{anchor}">{esc(s)}</text>'
 
 
+# ====================================================================================== the text inside a box
+BOX_BOTTOM = 16  # the last line's baseline sits this far above a box's bottom edge
+
+
+def _box_rows(title, lines, muted_last):
+    """Each line of a box, in order, as (how far its baseline sits below the box's top, text, class, what it is).
+    The title's lines are 22 apart, the first 26 down; plain lines follow 20 apart, small ones 18."""
+    rows, y = [], 26
+    for part in title.split("\n"):
+        rows.append((y, part, "tb", "box title"))
+        y += 22
+    y += 2
+    for i, item in enumerate(lines):
+        s, cls = item if isinstance(item, tuple) else (item, "ts" if (muted_last and i == len(lines) - 1) else "t")
+        rows.append((y, s, cls, "box line"))
+        y += 20 if cls == "t" else 18
+    return rows
+
+
+def box_height(title, lines=(), muted_last=False):
+    """The exact height a box needs for this title and these lines, with the same arguments as Canvas.box.
+    Its last line then sits 16 above the bottom edge, about as far as the title's capitals sit below the top edge.
+    A box can be taller; boxes side by side in one row can share the largest of their heights."""
+    return _box_rows(title, lines, muted_last)[-1][0] + BOX_BOTTOM
+
+
 # ====================================================================================== a canvas for data flow pictures
 class Canvas:
     """Places the parts of a data flow picture. Coordinates are in a 1000-wide box unless width says otherwise.
@@ -90,9 +134,9 @@ class Canvas:
     arrow (file, ring, say or loc) and label. Every part checks that its text fits.
     """
 
-    def __init__(self, pfx, width=1000, height=800, label="", wide=True):
+    def __init__(self, pfx, width=1000, height=800, label=""):
         self.pfx, self.width, self.height = pfx, width, height
-        self.el = [svg_open(width, height, pfx, label, wide=wide)]
+        self.el = [svg_open(width, height, pfx, label)]
 
     def zone(self, x, y, w, h, title, sub="", kind="mac", sub_anchor="start"):
         cls = "zone store-zone" if kind == "store" else "zone"
@@ -109,21 +153,15 @@ class Canvas:
 
     def box(self, x, y, w, h, title, lines=(), muted_last=False):
         """A process box. title may hold a newline for two bold lines. A line is plain text, or (text, "ts") for the
-        small muted size; muted_last makes the last line small, which is the usual shape: a title, facts, one aside."""
+        small muted size; muted_last makes the last line small, which is the usual shape: a title, facts, one aside.
+        box_height(title, lines, muted_last) gives the exact h the text needs; a shorter box is refused."""
+        need = box_height(title, lines, muted_last)
+        if h < need:
+            raise FigureError(f"box {title!r} is {h}px tall but its text needs {need}px: box_height() gives the height")
         self.el.append(f'<rect class="box" x="{x}" y="{y}" width="{w}" height="{h}" rx="10"/>')
-        ty = y + 26
-        for part in title.split("\n"):
-            must_fit(part, w - 32, "tb", "box title")
-            self.el.append(text(x + 16, ty, part, "tb"))
-            ty += 22
-        ty += 2
-        for i, item in enumerate(lines):
-            s, cls = item if isinstance(item, tuple) else (item, "ts" if (muted_last and i == len(lines) - 1) else "t")
-            must_fit(s, w - 32, cls, "box line")
-            self.el.append(text(x + 16, ty, s, cls))
-            ty += 20 if cls == "t" else 18
-        if ty - 14 > y + h:
-            raise FigureError(f"box {title!r} is {h}px tall but its text needs {ty - 14 - y}px")
+        for dy, s, cls, where in _box_rows(title, lines, muted_last):
+            must_fit(s, w - 32, cls, where)
+            self.el.append(text(x + 16, y + dy, s, cls))
         return self
 
     def store(self, x, y, w, h, name, l1="", l2=""):
@@ -258,84 +296,105 @@ def mermaid_sequence(seq):
     return "\n".join(lines)
 
 
-# ====================================================================================== the page and its style
-TOKENS_LIGHT = {
-    "--bg": "#F3F5F8", "--surface": "#FFFFFF", "--panel": "#E8EDF3", "--ink": "#16202B", "--muted": "#475466", "--line": "#B4BFCC",
-    "--file": "#0A7468", "--ring": "#B04F08", "--person-fill": "#E3E6FB", "--person-line": "#4A4FC2", "--code-bg": "#E6ECF3", "--store-zone": "#EAF4F2",
+# ====================================================================================== the house style
+# Every colour is a token with a light and a dark value. STYLE names the tokens; theme_css puts one theme's values in,
+# so a finished SVG holds plain colours and needs nothing from outside the file.
+THEMES = {
+    "light": {"--surface": "#FFFFFF", "--panel": "#E8EDF3", "--ink": "#16202B", "--muted": "#475466", "--line": "#B4BFCC",
+              "--file": "#0A7468", "--ring": "#B04F08", "--person-fill": "#E3E6FB", "--person-line": "#4A4FC2",
+              "--store-zone": "#EAF4F2"},
+    "dark": {"--surface": "#141C26", "--panel": "#1A2431", "--ink": "#E7EDF3", "--muted": "#A3B0BF", "--line": "#364354",
+             "--file": "#3DD6C2", "--ring": "#F4B14F", "--person-fill": "#222A52", "--person-line": "#9EA3F2",
+             "--store-zone": "#11262A"},
 }
-TOKENS_DARK = {
-    "--bg": "#0D131A", "--surface": "#141C26", "--panel": "#1A2431", "--ink": "#E7EDF3", "--muted": "#A3B0BF", "--line": "#364354",
-    "--file": "#3DD6C2", "--ring": "#F4B14F", "--person-fill": "#222A52", "--person-line": "#9EA3F2", "--code-bg": "#1B2531", "--store-zone": "#11262A",
-}
 
-
-def _css_block(tokens):
-    return "".join(f"{k}:{v};" for k, v in tokens.items())
-
-
-CSS = f"""
-:root {{ {_css_block(TOKENS_LIGHT)}
-  --font-body: Arial, sans-serif;
-  --font-mono: Menlo, monospace; }}
-@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ {_css_block(TOKENS_DARK)} color-scheme: dark; }} }}
-:root[data-theme="dark"] {{ {_css_block(TOKENS_DARK)} color-scheme: dark; }}
-body {{ background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.6; margin: 0; padding: 32px 16px 72px; }}
-.wrap {{ max-width: 920px; margin: 0 auto; }}
-h1, h3 {{ line-height: 1.2; margin: 0; }} h3 {{ margin-top: 2rem; }}
-.legend {{ display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 1.2rem 0 0.8rem; font-size: 0.95rem; }}
-.legend span {{ display: inline-flex; align-items: center; gap: 8px; }}
-.legend svg {{ width: 44px; height: 14px; flex: none; }}
-figure {{ margin: 1rem 0 0; }}
-.frame {{ overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }}
-.frame svg {{ display: block; width: 100%; min-width: 820px; height: auto; }}
-.frame svg.wide {{ min-width: 900px; }}
-figcaption {{ color: var(--muted); font-size: 0.97rem; margin-top: 0.6rem; max-width: 68ch; }}
-svg text {{ font-family: var(--font-body); fill: var(--ink); }}
-svg .t {{ font-size: 14px; }} svg .tb {{ font-size: 15px; font-weight: 700; }} svg .sm {{ font-size: 12.5px; }}
-svg .ts {{ font-size: 12.5px; fill: var(--muted); }} svg .tm {{ font-family: var(--font-mono); }}
-svg .zt {{ font-size: 13px; font-weight: 700; letter-spacing: 0.1em; fill: var(--muted); }}
-svg .halo {{ paint-order: stroke fill; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }}
-svg .zone {{ fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }}
-svg .store-zone {{ fill: var(--store-zone); stroke: var(--file); }}
-svg .box {{ fill: var(--surface); stroke: var(--ink); stroke-width: 1.8; }}
-svg .store {{ fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; }}
-svg .person {{ fill: var(--person-fill); stroke: var(--person-line); stroke-width: 1.8; }}
-svg .hd {{ fill: var(--panel); stroke: var(--ink); stroke-width: 1.6; }}
-svg .note {{ fill: var(--panel); stroke: var(--line); stroke-width: 1.4; }}
-svg .life {{ stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 5; }}
-svg .a {{ fill: none; stroke-width: 2.2; }}
-svg .a-file {{ stroke: var(--file); }} svg .a-ring {{ stroke: var(--ring); stroke-dasharray: 7 5; }}
-svg .a-say {{ stroke: var(--ink); }} svg .a-loc {{ stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }}
-svg .mk-file {{ fill: var(--file); }} svg .mk-ring {{ fill: var(--ring); }} svg .mk-say {{ fill: var(--ink); }} svg .mk-loc {{ fill: var(--muted); }}
-.lg-file {{ stroke: var(--file); stroke-width: 2.4; }} .lg-ring {{ stroke: var(--ring); stroke-width: 2.4; stroke-dasharray: 7 5; }}
-.lg-say {{ stroke: var(--ink); stroke-width: 2.4; }} .lg-loc {{ stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 5 4; }}
+STYLE = """
+text { font-family: Arial, sans-serif; fill: var(--ink); }
+.t { font-size: 14px; } .tb { font-size: 15px; font-weight: 700; } .sm { font-size: 12.5px; }
+.ts { font-size: 12.5px; fill: var(--muted); } .tm { font-family: Menlo, monospace; }
+.zt { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; fill: var(--muted); }
+.halo { paint-order: stroke fill; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.card { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.zone { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.store-zone { fill: var(--store-zone); stroke: var(--file); }
+.box { fill: var(--surface); stroke: var(--ink); stroke-width: 1.8; }
+.store { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.person { fill: var(--person-fill); stroke: var(--person-line); stroke-width: 1.8; }
+.hd { fill: var(--panel); stroke: var(--ink); stroke-width: 1.6; }
+.note { fill: var(--panel); stroke: var(--line); stroke-width: 1.4; }
+.life { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 5; }
+.a { fill: none; stroke-width: 2.2; }
+.a-file { stroke: var(--file); } .a-ring { stroke: var(--ring); stroke-dasharray: 7 5; }
+.a-say { stroke: var(--ink); } .a-loc { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.mk-file { fill: var(--file); } .mk-ring { fill: var(--ring); } .mk-say { fill: var(--ink); } .mk-loc { fill: var(--muted); }
+.lg-file { stroke: var(--file); stroke-width: 2.4; } .lg-ring { stroke: var(--ring); stroke-width: 2.4; stroke-dasharray: 7 5; }
+.lg-say { stroke: var(--ink); stroke-width: 2.4; } .lg-loc { stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 5 4; }
 """
 
-# The four arrow meanings. A figure uses the ones it needs; the exporter keeps only those in the picture's legend.
+
+def theme_css(theme):
+    """STYLE with one theme's colours in place of the token names."""
+    tokens = THEMES[theme]
+    return re.sub(r"var\((--[a-z-]+)\)", lambda m: tokens[m.group(1)], STYLE)
+
+
+# ====================================================================================== the card: legend and figure
+# The four arrow meanings. A figure's legend shows only the kinds it uses.
 LEGEND_TEXT = {"file": "a file written or read", "ring": "a ring (a nudge only)", "say": "a person's words, or Claude's report", "loc": "kept on one machine only"}
 
-
-def legend_html(texts=None):
-    texts = texts or LEGEND_TEXT
-    parts = "".join(
-        f'<span><svg viewBox="0 0 44 14" aria-hidden="true"><line class="lg-{k}" x1="2" y1="7" x2="42" y2="7"/></svg>{esc(texts[k])}</span>'
-        for k in ARROW_KINDS
-    )
-    return f'<div class="legend" aria-label="How to read the arrows">{parts}</div>'
+CARD_W = 920       # units; the PNG is twice this, 1840 pixels
+FIGURE_W = 898     # the figure inside the card: a 1-unit edge, then 10 on each side
+LEGEND_ROW = 22.4  # one legend row; rows are 6 apart, and the entries in a row 18 apart
 
 
-def render_page(figures, title="Figures", legend_texts=None):
-    """figures: [{stem, alt, svg, heading}]. One page the exporter photographs figure by figure."""
-    o = ["<!doctype html><meta charset=\"utf-8\">", f"<title>{esc(title)}</title>", f"<style>{CSS}</style>",
-         '<div class="wrap">', f"<h1>{esc(title)}</h1>", legend_html(legend_texts)]
-    for f in figures:
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", f["stem"]):
-            raise FigureError(f"stem {f['stem']!r}: use lower-case letters, digits and hyphens")
-        if f.get("heading"):
-            o.append(f"<h3>{esc(f['heading'])}</h3>")
-        o.append(f'<figure data-png="{f["stem"]}"><div class="frame">{f["svg"]}</div><figcaption>{esc(f["alt"])}</figcaption></figure>')
-    o.append("</div>")
-    return "\n".join(o) + "\n"
+def used_kinds(svg):
+    """The arrow kinds a figure draws, in legend order."""
+    return [k for k in ARROW_KINDS if re.search(rf'class="[^"]*\ba-{k}\b', svg)]
+
+
+def legend_svg(kinds, texts, top=15):
+    """The legend entries for kinds, flowed into rows like words: a 44-wide swatch of the arrow, 8 of space, then the
+    words. Rows start 18 inside the card's edge. Returns the SVG and the y where the last row ends."""
+    left, right = 1 + 18, CARD_W - 1 - 18
+    x, y, parts = left, top, []
+    for k in kinds:
+        w = 52 + arial_width(texts[k])
+        if x > left and x + w > right:
+            x, y = left, y + LEGEND_ROW + 6
+        parts.append(f'<line class="lg-{k}" x1="{x + 2}" y1="{round(y + 11.2, 1)}" x2="{x + 42}" y2="{round(y + 11.2, 1)}"/>')
+        parts.append(text(x + 52, round(y + 16, 1), texts[k]))
+        x = round(x + w + 18, 1)
+    return "".join(parts), y + LEGEND_ROW
+
+
+def _placed(svg, x, y, width):
+    """The figure's own svg element, placed at x, y and drawn width wide. Its viewBox keeps its units, so every
+    coordinate in the figure stays as the spec wrote it. A size or place the element already had gives way to these.
+    Returns the element and its drawn height."""
+    svg = svg.strip()
+    head = re.match(r"<svg\b[^>]*>", svg)
+    box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', head.group(0)) if head else None
+    if not box:
+        raise FigureError('a figure must start with <svg viewBox="0 0 WIDTH HEIGHT">')
+    height = round(float(box.group(2)) * width / float(box.group(1)), 2)
+    rest = re.sub(r'\s(?:x|y|width|height)="[^"]*"', "", head.group(0))[len("<svg"):]
+    return f'<svg x="{x}" y="{y}" width="{width}" height="{height}"{rest}' + svg[head.end():], height
+
+
+def card(svg, theme, legend_texts=None, label=""):
+    """One figure as a self-contained SVG in one theme: its own style sheet, the card behind everything, the legend
+    entries for the arrow kinds the figure uses, then the figure. 920 units wide, so rsvg-convert --zoom 2 gives
+    1840 pixels. Outside the card's rounded corners the picture is transparent."""
+    if theme not in THEMES:
+        raise FigureError(f"theme {theme!r}: use one of {tuple(THEMES)}")
+    kinds = used_kinds(svg)
+    legend, legend_end = legend_svg(kinds, legend_texts or LEGEND_TEXT) if kinds else ("", 5)
+    figure, figure_h = _placed(svg, 11, round(legend_end + 6, 1), FIGURE_W)
+    height = math.ceil(legend_end + 6 + figure_h + 10 + 1)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_W}" height="{height}" viewBox="0 0 {CARD_W} {height}"'
+            f' role="img" aria-label="{esc(label)}"><style>{theme_css(theme)}</style>'
+            f'<rect class="card" x="0.5" y="0.5" width="{CARD_W - 1}" height="{height - 1}" rx="9.5"/>'
+            f"{legend}{figure}</svg>\n")
 
 
 # ====================================================================================== embedding in Markdown
@@ -352,28 +411,33 @@ def picture_block(stem, alt, mermaid=None, folder="figures"):
 
 
 # ====================================================================================== building from a spec
+THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, like the PNGs made from them
+
+
 def build(spec, out_dir):
     """spec: a module or object with FIGURES, a list of dicts, each with stem, alt and either svg (a string or a
-    callable) or seq (a sequence dict, drawn and also written as Mermaid). Optional heading and mermaid.
-    Writes out_dir/figures.html, one .svg per figure and one .mmd where there is Mermaid. Returns the figure list."""
+    callable) or seq (a sequence dict, drawn and also written as Mermaid). Optional: mermaid, and LEGEND on the spec,
+    new words for any of the four arrow meanings.
+    Writes out_dir/<stem>.svg and out_dir/<stem>-dark.svg, each complete on its own, and <stem>.mmd where there is
+    Mermaid. Returns the figure list; each entry's "files" maps light and dark to its SVG file."""
     os.makedirs(out_dir, exist_ok=True)
+    legend_texts = {**LEGEND_TEXT, **(getattr(spec, "LEGEND", None) or {})}
     figures = []
     for f in spec.FIGURES:
-        entry = {"stem": f["stem"], "alt": f["alt"], "heading": f.get("heading", "")}
+        stem = f["stem"]
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", stem):
+            raise FigureError(f"stem {stem!r}: use lower-case letters, digits and hyphens")
         if "seq" in f:
-            entry["svg"] = render_sequence(f["seq"])
-            entry["mermaid"] = mermaid_sequence(f["seq"])
+            svg, mermaid = render_sequence(f["seq"]), mermaid_sequence(f["seq"])
         else:
-            entry["svg"] = f["svg"]() if callable(f["svg"]) else f["svg"]
-            entry["mermaid"] = f.get("mermaid", "")
-        figures.append(entry)
-    page = render_page(figures, getattr(spec, "TITLE", "Figures"), getattr(spec, "LEGEND", None))
-    with open(os.path.join(out_dir, "figures.html"), "w", encoding="utf-8") as handle:
-        handle.write(page)
-    for entry in figures:
-        with open(os.path.join(out_dir, f"{entry['stem']}.svg"), "w", encoding="utf-8") as handle:
-            handle.write(entry["svg"].replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1))
-        if entry["mermaid"]:
-            with open(os.path.join(out_dir, f"{entry['stem']}.mmd"), "w", encoding="utf-8") as handle:
-                handle.write(entry["mermaid"] + "\n")
+            svg, mermaid = f["svg"]() if callable(f["svg"]) else f["svg"], f.get("mermaid", "")
+        files = {}
+        for theme, suffix in THEME_SUFFIX.items():
+            files[theme] = os.path.join(out_dir, f"{stem}{suffix}.svg")
+            with open(files[theme], "w", encoding="utf-8") as handle:
+                handle.write(card(svg, theme, legend_texts, f["alt"]))
+        if mermaid:
+            with open(os.path.join(out_dir, f"{stem}.mmd"), "w", encoding="utf-8") as handle:
+                handle.write(mermaid + "\n")
+        figures.append({"stem": stem, "alt": f["alt"], "svg": svg, "mermaid": mermaid, "files": files})
     return figures

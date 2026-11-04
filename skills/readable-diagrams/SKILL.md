@@ -7,7 +7,7 @@ description: Draws data flow and sequence pictures as hand-laid-out SVG and expo
 
 A picture that a reader takes in at a glance is worth more than a page of text. Auto-laid-out Mermaid diagrams look fine, but Mermaid places every box itself: lines can cross, labels sit on top of the lines, and there is no legend. This skill is a method for placing every part by hand instead, so that every picture in a set matches the others without the next session having to rediscover the method.
 
-The method in one line: place every box and arrow yourself in Python, render through one HTML page with the house tokens, photograph each figure with the Mac's own Chrome in both themes, and keep Mermaid only as the editable text under the picture.
+The method in one line: place every box and arrow yourself in Python, write each figure as a self-contained SVG in each theme, draw each SVG as a PNG with `rsvg-convert`, and keep Mermaid only as the editable text under the picture.
 
 ## When to use it
 
@@ -25,10 +25,10 @@ Do not use it for charts of numbers (that is a chart, not a figure), for one-off
 
 The scripts live in `scripts/` next to this file. Read `scripts/example_spec.py` first: it holds three figures of a small notes sync, and it is the template for a new set.
 
-1. **Write the spec.** Copy `example_spec.py` to your working folder and replace its content. A spec defines `FIGURES`, each with a `stem`, an `alt` sentence and either `svg` (a function that draws on a `Canvas`) or `seq` (a sequence dict). Decide the stems from the document's section names: `data-flow`, `sequence-1-set-up`, `sequence-2-open`.
+1. **Write the spec.** Copy `example_spec.py` to your working folder and replace its content. A spec defines `FIGURES`, each with a `stem`, an `alt` sentence and either `svg` (a function that draws on a `Canvas`) or `seq` (a sequence dict). Decide the stems from the document's section names: `data-flow`, `sequence-1-set-up`, `sequence-2-open`. Give each box the height `figlib.box_height(title, lines)` returns: the exact height its text needs. A shorter box stops the build; boxes side by side can share the tallest.
 2. **Build without pictures first.** `python3 -I scripts/render.py SPEC.py OUT --no-png`. Text in boxes, stores, pills, zone titles and sequences is width-checked at build time, so text that would overflow stops the build with the text named. Free labels placed with `label()` are not checked; step 4 catches them. Shorten the words or widen the box; never shrink the font.
-3. **Export.** `bash scripts/doctor.sh` to check the Mac, and `bash scripts/doctor.sh --install` once per copy of the skill (it installs the exporter next to the scripts, with no browser download), then `python3 -I scripts/render.py SPEC.py OUT`. It writes `OUT/figures/*.png` in both themes. If the export cannot run, it prints the doctor's report instead: do what its → lines say. `puppeteer` can also sit in a `node_modules` folder higher up, such as the repo's own; the doctor asks Node, so it finds what the export finds.
-4. **Look at every PNG once.** Open each with the Read tool. You are looking for four things: two labels touching, a label past an edge, an arrow crossing text, and a box whose last line rides its bottom edge. Fix the spec and export again. One look per round is enough; the width checks catch the rest.
+3. **Export.** `bash scripts/doctor.sh` to check the Mac; when `rsvg-convert` is missing, its → line says `brew install librsvg`. Then `python3 -I scripts/render.py SPEC.py OUT`. It writes `OUT/figures/*.png` in both themes: `rsvg-convert` draws each one from its SVG in `OUT`. If `rsvg-convert` is missing, the build prints the doctor's report instead: do what its → lines say.
+4. **Look at every PNG once.** Open each with the Read tool. You are looking for four things: two labels touching, a label past an edge, an arrow crossing text, and a file box whose last line rides its bottom edge. Fix the spec and export again. One look per round is enough; the width checks catch the rest.
 5. **Embed.** Copy the PNGs into the document's `figures` folder and put the `<picture>` block from `figlib.picture_block(stem, alt, mermaid)` where the picture goes. The Mermaid text for a sequence comes from the build (`OUT/<stem>.mmd`); for a data flow, write a short Mermaid flowchart by hand, or leave the details block out.
 6. **Keep the spec.** Commit the spec beside the document's other sources, and commit the PNGs with it.
 
@@ -36,14 +36,14 @@ The scripts live in `scripts/` next to this file. Read `scripts/example_spec.py`
 
 These are not decoration. Each one came from something that made a picture hard to read.
 
-- **Four arrow kinds, four meanings, one legend.** Teal solid is a file written or read. Amber dashed is a ring, a nudge that carries no content. Ink solid is a person's words or Claude's report. Grey dashed and thin is data that stays on one machine. The exporter puts the legend inside every picture, trimmed to the kinds that picture uses, so the picture explains itself when it is pasted somewhere else. Give a new kind of movement one of these four meanings rather than inventing a fifth colour.
+- **Four arrow kinds, four meanings, one legend.** Teal solid is a file written or read. Amber dashed is a ring, a nudge that carries no content. Ink solid is a person's words or Claude's report. Grey dashed and thin is data that stays on one machine. figlib puts the legend inside every picture, trimmed to the kinds that picture uses, so the picture explains itself when it is pasted somewhere else. Give a new kind of movement one of these four meanings rather than inventing a fifth colour.
 - **The same panel repeated.** When three machines do the same thing, draw three identical panels at the same y positions. The eye learns one and reuses it. The example does this with fixed constants for every row.
 - **Two lines per box: what it is, then what it does.** A bold title and one or two plain lines. File and folder names in the mono face, in dashed boxes, so a file never looks like a process.
 - **People are pills, not boxes.** The lavender pill marks a person. Everything else is a machine or a file.
 - **Short labels, placed by hand.** A label sits beside its arrow, with a white halo when it crosses a line. figlib does not width-check these free labels, so check them in the PNG. When any text does not fit, cut words, not the font.
 - **Zones carry an uppercase title and a plain subtitle.** `DESKTOP  owner and host`. The subtitle is the one fact a reader needs about the zone.
 - **Both themes, by tokens.** Every colour is a CSS token with a light and a dark value. The dark PNG is a real dark rendering, not an inversion. Many readers work in dark mode, so look at the dark one first.
-- **Arial for words, Menlo for names.** Both come with every Mac, so the export needs no download, and the width checks are measured for them.
+- **Arial for words, Menlo for names.** Both come with every Mac, so no font is downloaded, and the width checks are measured for them.
 
 ## Layout rules that save a round trip
 
@@ -58,14 +58,13 @@ These are not decoration. Each one came from something that made a picture hard 
 
 | File | What |
 |---|---|
-| `scripts/figlib.py` | The library: text widths, the canvas for data flows, the sequence renderer, the Mermaid writer, the page, the tokens and the Markdown picture block |
+| `scripts/figlib.py` | The library: text widths, box heights, the canvas for data flows, the sequence renderer, the Mermaid writer, the tokens, the card with its legend, and the Markdown picture block |
 | `scripts/example_spec.py` | A complete worked example: one data flow and two sequences |
-| `scripts/render.py` | One command: build the spec, export light and dark |
-| `scripts/export_png.mjs` | The Chrome photographer, driven by `render.py` |
-| `scripts/doctor.sh` | Checks Python, Node, Chrome, the fonts and puppeteer; `--install` installs puppeteer once, no browser download |
-| `scripts/tests/test_figlib.py` | Builds the example and the sample, checks the SVG is well-formed, checks the width rules refuse what they should |
+| `scripts/render.py` | One command: build the spec, then draw each SVG as a PNG with `rsvg-convert` |
+| `scripts/doctor.sh` | Checks Python, `rsvg-convert` and the fonts; names the Homebrew command for anything missing |
+| `scripts/tests/test_figlib.py` | Builds the example and the sample, checks each SVG is well-formed and complete on its own, checks the width and height rules refuse what they should |
 | `references/layout.md` | The coordinate cookbook: where the rows sit in the example, and how to adapt them to two, three or four machines |
 | `HOW-IT-WORKS.md` | For people: the whole process, step by step, built around the sample |
 | `sample/` | A small spec and the pictures it makes: the skill's own pipeline, drawn by the skill |
 
-Nothing here needs the network. The exporter runs no Mermaid and no external service.
+Nothing here needs the network once `rsvg-convert` is installed. The export runs no Mermaid and no external service.

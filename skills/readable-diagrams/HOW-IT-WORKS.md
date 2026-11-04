@@ -32,7 +32,7 @@ The data flow:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="sample/figures/data-flow-dark.png">
-  <img src="sample/figures/data-flow.png" alt="Data flow of one build. Claude writes spec.py, render.py reads it and writes the page, Chrome reads the page and writes the PNGs, and Claude looks at each PNG.">
+  <img src="sample/figures/data-flow.png" alt="Data flow of one build. Claude writes spec.py, render.py reads it and writes a light and a dark SVG for each figure, rsvg-convert draws each SVG as a PNG, and Claude looks at each PNG.">
 </picture>
 
 <details>
@@ -44,8 +44,8 @@ flowchart LR
   subgraph mac["YOUR MAC"]
     claude["Claude session + skill"] -->|writes| spec[("spec.py")]
     spec -->|reads| render["render.py + figlib"]
-    render -->|writes| outdir[("out/: figures.html, .svg, .mmd")]
-    outdir -->|reads| exporter["export_png.mjs + Chrome"]
+    render -->|writes| outdir[("out/: light and dark .svg, .mmd")]
+    outdir -->|reads| exporter["rsvg-convert"]
     exporter -->|writes| pngs[("figures/*.png")]
     pngs -->|looks at each| claude
   end
@@ -59,7 +59,7 @@ The sequence, which is the whole build in order:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="sample/figures/build-sequence-dark.png">
-  <img src="sample/figures/build-sequence.png" alt="One build, in order. Claude writes the spec and runs render.py. render.py draws every figure, then runs the exporter twice, light and dark. Claude looks at each PNG before it goes in a document.">
+  <img src="sample/figures/build-sequence.png" alt="One build, in order. Claude writes the spec and runs render.py. render.py draws every figure as a light and a dark SVG, then runs rsvg-convert once for each SVG. Claude looks at each PNG before it goes in a document.">
 </picture>
 
 <details>
@@ -71,17 +71,17 @@ sequenceDiagram
   participant C as Claude (session + skill)
   participant R as render.py (Python + figlib)
   participant F as Files (on this Mac)
-  participant X as Chrome (export_png.mjs)
+  participant X as rsvg-convert (from librsvg)
   U->>C: "draw how the parts talk"
   C->>F: writes spec.py
   C->>R: render.py spec.py out
   R->>F: reads spec.py
   Note over R: draws every box and arrow,<br/>checks the text in each box
-  R->>F: writes figures.html, svg, mmd
-  R->>X: export: light, then dark
-  X->>F: opens figures.html
-  Note over X: one card per figure:<br/>its legend, then its SVG
-  X->>F: writes light and dark PNGs
+  R->>F: writes light and dark svg, mmd
+  R->>X: rsvg-convert, once per svg
+  X->>F: reads one svg
+  Note over X: at twice the size: 920<br/>units become 1840 pixels
+  X->>F: writes its PNG
   R->>C: 2 figures, 4 PNGs
   C->>F: looks at each PNG once
   C->>U: the picture, in your doc
@@ -94,11 +94,11 @@ Every box, arrow and label sits where Claude put it. The legend inside each pict
 ## TL;DR: the short version
 
 1. Claude writes a small Python file, the spec. In a data flow, the spec places every box, arrow and label by hand. In a sequence, the spec lists the messages in order, and the code places them.
-2. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `figlib.py`. It checks that the text in boxes and sequences fits. It puts every figure on one web page.
-3. `export_png.mjs` opens that page in the Mac's own Chrome. It photographs each figure twice: once light, once dark.
+2. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `figlib.py`. It checks that the text in boxes and sequences fits, and that each box is tall enough for its text. It writes every figure twice: a light SVG and a dark SVG, each complete on its own.
+3. `rsvg-convert` draws each SVG as a PNG, at twice its size.
 4. Claude looks at every picture. Then Claude pastes each picture into a document, with the Mermaid text folded underneath.
 
-A build never goes online. Only the one-time install does. `doctor.sh --install` downloads `puppeteer` from npm, the package store for JavaScript. `puppeteer` is a library that drives Chrome from code. It brings 79 more packages with it.
+A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
 
 ## Step by step, with the sample
 
@@ -106,7 +106,7 @@ The sample in this folder builds the skill's two pictures above: the data flow a
 
 | Path | What it is |
 |---|---|
-| `sample/spec.py` | The input: two figures, in 89 lines of Python |
+| `sample/spec.py` | The input: two figures, in 86 lines of Python |
 | `sample/figures/` | The pictures, copied from the build's `out/figures/`, plus Mermaid's drawings of both, for comparison |
 
 ### Step 1: Claude writes the spec
@@ -116,8 +116,7 @@ A spec is a Python file. figlib reads three names from it. Only `FIGURES` is req
 | Name | What it holds |
 |---|---|
 | `FIGURES` | One entry per picture |
-| `TITLE` | The title of the page that holds the figures |
-| `LEGEND` | New words for the four arrow meanings. Give all four. |
+| `LEGEND` | New words for any of the four arrow meanings. The others keep their defaults. |
 
 Each entry in `FIGURES` has a `stem`, which becomes the file name. It has an `alt`: one sentence for screen readers, with no double quotes. It also has one of two drawing kinds:
 
@@ -138,6 +137,8 @@ c.arrow(COLS[0] + W, ROW_A + 36, COLS[1], ROW_A + 36, "file").label(335, ROW_A +
 ```
 
 The first four numbers of `box` and `store` are x, y, width and height. A `box` is a program. A `store` is a file. The `"ts"` makes a line small and grey.
+
+`box_height(title, lines)` returns the exact height a box needs for its text. The last line then sits 16 units above the bottom edge, about as far as the title's capitals sit below the top edge. A shorter box stops the build. The sample's boxes are 72 tall, the same as the files beside them. On their own, they would need 66.
 
 `arrow` takes a start point, an end point and a kind. `.label` writes a word at its own x and y. `"middle"` centres that word on its x. The sample also uses a `zone`, the tinted panel for a machine, here YOUR MAC. It also uses a `pill`, which is a person.
 
@@ -172,16 +173,14 @@ A message label must fit between its two lifelines.
 
 ### Step 2: run render.py
 
-The Mac needs three things:
+The Mac needs two things:
 
 1. Python 3
-2. Node `14.14` or newer, which runs JavaScript outside a browser and brings npm
-3. Google Chrome, in `/Applications`
+2. `rsvg-convert`, from librsvg, a library that draws SVG. Homebrew installs it once per Mac: `brew install librsvg`
 
 ```bash
 cd skills/readable-diagrams/scripts
 bash doctor.sh                                 # checks the Mac, changes nothing
-bash doctor.sh --install                       # once per copy of the skill
 python3 -I render.py ../sample/spec.py out
 ```
 
@@ -189,29 +188,20 @@ The real output of the last command:
 
 ```text
 built 2 figure(s) in out: data-flow, build-sequence
-light: 2 PNG(s)
-dark: 2 PNG(s)
-PNGs in out/figures. Look at each one once before you ship it.
+4 PNG(s), light and dark, in out/figures. Look at each one once before you ship it.
 ```
 
-`doctor.sh` checks Python, Node, npm, Chrome, the two fonts and `puppeteer`. It prints one line per check, and a → line under anything missing. It changes nothing.
+`doctor.sh` checks Python, `rsvg-convert` and the two fonts. It prints one line per check, and a → line under anything missing. For `rsvg-convert`, that line is `brew install librsvg`. The doctor changes nothing.
 
-`doctor.sh --install` also installs `puppeteer` into `scripts/node_modules/`, inside the skill's own folder. It skips `puppeteer`'s own browser download. The export uses the Chrome already on the Mac.
+Add `--no-png` to stop after the SVG files. `SKILL.md` has Claude build that way first. Text that does not fit then shows up before any PNG is drawn.
 
-Because the packages live inside the skill's folder, the install runs once per copy of the skill. An installed plugin is its own copy, so it needs its own install.
-
-`puppeteer` does not have to live in the skill's folder. The doctor asks Node to load `puppeteer` from the scripts folder, the same way the export does. Node looks for a `node_modules` folder in the scripts folder and in every folder above it, so a `puppeteer` in your repo's own `node_modules` works too.
-
-Add `--no-png` to stop after the SVG and the page. `SKILL.md` has Claude build that way first. Text that does not fit then shows up before Chrome starts.
-
-Steps 3 to 5 all happen inside this one `render.py` command. `render.py` does four things:
+Steps 3 to 5 all happen inside this one `render.py` command. `render.py` does three things:
 
 1. It loads the spec file as a Python module.
-2. It calls `figlib.build`, which writes the page, the SVG files and the Mermaid files (steps 3 and 4).
-3. It runs `node export_png.mjs` twice: light, then dark (step 5).
-4. It counts the PNGs each run reports. If one is missing, it stops with "export failed for light:" or "export failed for dark:".
+2. It calls `figlib.build`, which writes two SVG files per figure, light and dark, and the Mermaid files (steps 3 and 4).
+3. It runs `rsvg-convert` once for each SVG file (step 5). If `rsvg-convert` fails on a file, the build stops and prints `rsvg-convert`'s own error.
 
-When the export cannot run, `render.py` catches the error and runs `doctor.sh`. That happens when `puppeteer` or Node is missing, or when an export fails. It prints the doctor's report: the same lines the doctor prints on its own.
+When `rsvg-convert` is not installed, `render.py` catches the error and runs `doctor.sh`. It prints the doctor's report: the same lines the doctor prints on its own.
 
 The `-I` flag runs Python in isolated mode. Isolated mode ignores your own Python settings, such as `PYTHONPATH`. So your settings cannot change which code runs. Isolated mode also leaves the script's folder off the import path. So `render.py` adds its own folder to the path. Without that step, `import figlib` would fail.
 
@@ -225,7 +215,7 @@ SVG is a picture written as text: shapes and words, each with a position. Each c
 <text class="t" x="386" y="180" text-anchor="start">every box and arrow, by hand</text>
 ```
 
-The SVG holds no colours. The class names get their colours and fonts from the page in step 4. `store` is the dashed file box. `tm` sets the mono font, Menlo. `tb` sets bold.
+The figure holds no colours yet. The class names get their colours and fonts in step 4. `store` is the dashed file box. `tm` sets the mono font, Menlo. `tb` sets bold.
 
 Before figlib writes text into a box, a store, a pill, a zone title or a sequence, it checks that the text fits. The estimate is simple: the number of characters, times a width per character. For Arial the width is an average. For Menlo it is exact.
 
@@ -234,7 +224,7 @@ Before figlib writes text into a box, a store, a pill, a zone title or a sequenc
 | `t` | Plain lines and sequence labels | 14 | 6.2, average |
 | `tb` | Box titles | 15, bold | 7.0, average |
 | `ts` | Small grey lines | 12.5 | 5.6, average |
-| `tm tb` | File and folder names in a store | 15, bold Menlo | 9.0, exact |
+| `tm tb` | File and folder names in a store | 15, bold Menlo | 9.03, exact |
 
 These numbers are canvas units, though figlib's messages say px. In the PNG, one canvas unit is about 1.8 pixels.
 
@@ -252,9 +242,11 @@ figlib also writes the sequence as Mermaid text, in `out/build-sequence.mmd`. Th
 
 A data flow gets a Mermaid file only when the spec gives one. figlib cannot write one itself. A canvas holds only shapes at positions, so it does not know which box an arrow joins. The sample gives its Mermaid text by hand, under the `"mermaid"` key.
 
-### Step 4: one web page holds every figure
+### Step 4: each figure becomes two SVG files, light and dark
 
-`out/figures.html` holds the arrow legend once, then every figure with its caption. Its style sheet (CSS, Cascading Style Sheets) gives each class a colour and a font.
+figlib puts each figure on a card, 920 units wide. The card holds the arrow legend first, cut down to the kinds this figure uses, then the figure. Both sample figures use only two arrow kinds, so each legend shows two entries.
+
+Each SVG file carries its own style sheet (CSS, Cascading Style Sheets). The style sheet gives each class a colour and a font.
 
 Every colour is a token: a named colour with a light value and a dark value.
 
@@ -265,30 +257,28 @@ Every colour is a token: a named colour with a light value and a dark value.
 | `--file` | `file` arrows | `#0A7468` | `#3DD6C2` |
 | `--ring` | `ring` arrows | `#B04F08` | `#F4B14F` |
 
-The page switches to the dark values when the browser asks for dark mode. Words use Arial. File names use Menlo. Both fonts come with every Mac, so nothing is downloaded.
+The light file, `out/data-flow.svg`, holds the light values. The dark file, `out/data-flow-dark.svg`, holds the dark values. So each file is complete on its own: open either one in a browser, and it looks like its PNG.
 
-You can open `out/figures.html` in a browser to see every figure at once. Do not use the `.svg` files on their own. Without the page's style sheet, every box is black and every arrow is invisible. Nothing in the build reads the `.svg` files. Only the tests use them, to check that each figure is well-formed.
+Words use Arial. File names use Menlo. Both fonts come with every Mac, so nothing is downloaded.
 
-### Step 5: Chrome photographs each figure
+### Step 5: rsvg-convert draws each PNG
 
-`export_png.mjs` is a Node script. It uses `puppeteer` to drive Chrome with no window on screen.
+`rsvg-convert` comes with librsvg. It reads one SVG file and writes one PNG file, with no browser and no window.
 
-For each theme, the script does five things:
+`render.py` runs it once for each SVG file:
 
-1. It starts the Mac's Chrome on a hidden page, at twice the normal pixel density.
-2. It tells the page that the screen is in light mode, or in dark mode.
-3. It reads the `--surface` colour back from the page. The light value in the step 4 table proves light mode. The dark value proves dark mode. Any other value stops the export.
-4. For each figure, it builds a card 920 pixels wide: the legend, cut down to the arrow kinds this figure uses, then the figure.
-5. It photographs the card, then removes it. At twice the density, the PNG is 1840 pixels wide.
+```bash
+rsvg-convert --zoom 2 --output out/figures/data-flow.png out/data-flow.svg
+```
 
-The light run writes `<stem>.png`, and the dark run writes `<stem>-dark.png`. The sample's pictures:
+The card is 920 units wide, so at `--zoom 2` the PNG is 1840 pixels wide. Outside the card's rounded corners, the PNG is transparent.
+
+The light file becomes `<stem>.png`, and the dark file becomes `<stem>-dark.png`. The sample's pictures:
 
 | Picture | Size in pixels |
 |---|---|
 | `data-flow.png` | 1840 × 846 |
 | `build-sequence.png` | 1840 × 1370 |
-
-Both sample figures use only two arrow kinds. So each legend shows only two entries.
 
 ### Step 6: Claude looks at every PNG once
 
@@ -297,9 +287,9 @@ Both sample figures use only two arrow kinds. So each legend shows only two entr
 1. Two labels touching
 2. A label past an edge
 3. An arrow crossing text
-4. A box whose last line sits on its bottom edge
+4. A file box whose last line sits on its bottom edge
 
-If Claude finds one, Claude changes the spec and builds again. The width check catches most overflows in boxes and sequences. This look catches the rest, including every free label.
+If Claude finds one, Claude changes the spec and builds again. The width check catches most overflows in boxes and sequences. This look catches the rest, including every free label. A program box never has the fourth fault: the build refuses one shorter than its text needs.
 
 ### Step 7: the picture goes into a document
 
@@ -324,13 +314,11 @@ The two skill pictures on this page are such blocks.
 | `SKILL.md` | Instructions for Claude | When to use the skill, the steps, and the style rules |
 | `HOW-IT-WORKS.md` | Markdown | This page |
 | `.gitignore` | git settings | Keeps what a build makes out of git, so a copied skill folder stays clean |
-| `scripts/figlib.py` | Python, standard library only | The canvas, sequences, text checks, page, Mermaid text and picture block |
-| `scripts/render.py` | Python | One command: build, then export light and dark |
-| `scripts/export_png.mjs` | JavaScript, for Node | The photographer |
-| `scripts/doctor.sh` | bash | Checks the Mac; `--install` installs `puppeteer` once per copy, without a browser download |
-| `scripts/package.json` | JSON (a data file), for npm | The one dependency: `puppeteer` `19.11.1` |
+| `scripts/figlib.py` | Python, standard library only | The canvas, sequences, text checks, box heights, style sheet, legend card, Mermaid text and picture block |
+| `scripts/render.py` | Python | One command: build, then draw each PNG with `rsvg-convert` |
+| `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_figlib.py` | Python | 18 tests: the example and the sample build, the checks refuse what they should, a zone subtitle stays clear of its title, the doctor finds `puppeteer` where Node does, and a relative output folder works |
+| `scripts/tests/test_figlib.py` | Python | 23 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, and a relative output folder works |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new figure |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
 
@@ -338,6 +326,4 @@ The two skill pictures on this page are such blocks.
 
 - **The width check is an average, not a ceiling.** A long label at its limit can run up to about a fifth wider than its estimate. Step 6 catches it.
 - **Free labels are not checked.** Words placed with `label()`, and zone subtitles, rely on step 6.
-- **The defaults are for a Mac.** The export looks for Chrome in `/Applications`. Set `CHROME_PATH` to use a Chrome somewhere else. Menlo, the font for file names, comes only with macOS.
-- **`puppeteer` `19.11.1` is old.** npm warns that versions before `24.15.0` are no longer supported. It still drives today's Chrome. Even so, an upgrade is due.
-- **The `.svg` files show black boxes when opened alone.** Only the tests read them.
+- **The defaults are for a Mac.** Arial and Menlo come with macOS. On another system, `rsvg-convert` uses the nearest fonts it has, and the width checks are less exact. The doctor's install line uses Homebrew.

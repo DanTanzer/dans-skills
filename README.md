@@ -61,7 +61,13 @@ npx skills add DanTanzer/dans-skills --skill readable-diagrams -a claude-code
 
 ## Before the first picture
 
-The PNG export needs Node and Google Chrome on the Mac. Before the first export, Claude runs the skill's `scripts/doctor.sh` to check the Mac, then `scripts/doctor.sh --install` once, in the skill's own folder, to install `puppeteer`.
+The PNG export uses `rsvg-convert`, from librsvg. Install it once with Homebrew:
+
+```bash
+brew install librsvg
+```
+
+Before the first export, Claude runs the skill's `scripts/doctor.sh` to check the Mac.
 
 [`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) walks through one build, step by step, with a small sample.
 

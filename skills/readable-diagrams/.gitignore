@@ -1,5 +1,3 @@
 # This skill carries its own ignore rules, so a copied skill folder stays clean.
-node_modules/
-package-lock.json
 out/
 __pycache__/

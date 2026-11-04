@@ -2,9 +2,10 @@
 
     python3 -I render.py SPEC.py OUT_DIR [--no-png]
 
-SPEC.py is a Python file that defines FIGURES (see example_spec.py). OUT_DIR gets figures.html, one .svg and .mmd per
-figure, and figures/<stem>.png plus figures/<stem>-dark.png. --no-png stops after the SVG and HTML, for a quick check
-or for a machine without Chrome. Exit 1 with a plain message when a label does not fit or the export fails.
+SPEC.py is a Python file that defines FIGURES (see example_spec.py). OUT_DIR gets two SVGs per figure, <stem>.svg and
+<stem>-dark.svg, each complete on its own, a .mmd where there is Mermaid, and figures/<stem>.png plus
+figures/<stem>-dark.png, drawn from those SVGs by rsvg-convert. --no-png stops after the SVGs, for a quick check.
+Exit 1 with a plain message when a label does not fit or the export fails.
 """
 import importlib.util
 import os
@@ -12,25 +13,17 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EXPORTER = os.path.join(HERE, "export_png.mjs")
 sys.path.insert(0, HERE)
 import figlib  # noqa: E402
 
 
-def export(page, png_dir, theme):
-    """Runs export_png.mjs for one theme. Node runs in this folder, so both paths go to it in full: a relative path
-    would point inside the scripts folder instead of the folder the command was run from."""
-    command = ["node", EXPORTER, os.path.abspath(page), os.path.abspath(png_dir), theme]
-    return subprocess.run(command, capture_output=True, text=True, cwd=HERE)
-
-
-def cannot_load_puppeteer(stderr):
-    """True when Node says export_png.mjs cannot find puppeteer from where it sits."""
-    return "ERR_MODULE_NOT_FOUND" in stderr and "'puppeteer'" in stderr
+def rasterize(svg, png):
+    """rsvg-convert draws one SVG as a PNG at twice its size, so a 920-unit card becomes 1840 pixels wide."""
+    return subprocess.run(["rsvg-convert", "--zoom", "2", "--output", png, svg], capture_output=True, text=True)
 
 
 def doctor_report():
-    """doctor.sh in check mode: the same report it prints when run on its own."""
+    """doctor.sh: the same report it prints when run on its own."""
     try:
         done = subprocess.run(["bash", os.path.join(HERE, "doctor.sh")], capture_output=True, text=True)
     except OSError as err:
@@ -66,23 +59,19 @@ def main(argv):
     print(f"built {len(figures)} figure(s) in {out_dir}: " + ", ".join(f["stem"] for f in figures))
     if not want_png:
         return 0
-    page = os.path.join(out_dir, "figures.html")
     png_dir = os.path.join(out_dir, "figures")
-    for theme in ("light", "dark"):
-        try:
-            done = export(page, png_dir, theme)
-        except FileNotFoundError:
-            return stop_with_doctor("node was not found, so the PNG export cannot run.")
-        if done.returncode != 0 and cannot_load_puppeteer(done.stderr):
-            return stop_with_doctor("The PNG export cannot run yet.")
-        wrote = [ln for ln in done.stdout.splitlines() if ln.startswith("wrote")]
-        if done.returncode != 0 or len(wrote) != len(figures):
-            print(f"export failed for {theme}:")
-            print(done.stdout[-2000:])
-            print(done.stderr[-2000:])
-            return stop_with_doctor("The export failed.")
-        print(f"{theme}: {len(wrote)} PNG(s)")
-    print(f"PNGs in {png_dir}. Look at each one once before you ship it.")
+    os.makedirs(png_dir, exist_ok=True)
+    for f in figures:
+        for svg in f["files"].values():
+            png = os.path.join(png_dir, os.path.splitext(os.path.basename(svg))[0] + ".png")
+            try:
+                done = rasterize(svg, png)
+            except FileNotFoundError:
+                return stop_with_doctor("rsvg-convert was not found, so the PNG export cannot run.")
+            if done.returncode != 0:
+                print(f"rsvg-convert could not draw {svg}:\n{done.stderr.strip()[-2000:]}")
+                return 1
+    print(f"{2 * len(figures)} PNG(s), light and dark, in {png_dir}. Look at each one once before you ship it.")
     return 0
 
 
