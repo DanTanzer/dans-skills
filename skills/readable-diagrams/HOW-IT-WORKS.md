@@ -1,6 +1,6 @@
 # How readable-diagrams works
 
-`readable-diagrams` is a skill for Claude Code, Anthropic's coding tool. A skill is a folder of instructions and scripts that Claude follows. This skill turns a short Python file into diagrams: PNG (Portable Network Graphics) pictures, one light and one dark.
+`readable-diagrams` is a skill for Claude Code, Anthropic's coding tool. A skill is a folder of instructions and scripts that Claude follows. This skill turns a short Python file into diagrams: PNG (Portable Network Graphics) pictures, light, dark or both.
 
 Mermaid is a common text format for diagrams. GitHub draws Mermaid text by itself. You go from Mermaid's two drawings below to the skill's drawings of the same two diagrams: a data flow and a sequence. All four pictures show the same build.
 
@@ -9,8 +9,8 @@ Mermaid is a common text format for diagrams. GitHub draws Mermaid text by itsel
 The data flow:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="sample/figures/data-flow-mermaid-dark.png">
-  <img src="sample/figures/data-flow-mermaid.png" alt="The same data flow drawn by Mermaid's automatic layout: one long thin strip with small text.">
+  <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/data-flow-mermaid-dark.png">
+  <img src="sample/diagrams/data-flow-mermaid.png" alt="The same data flow drawn by Mermaid's automatic layout: one long thin strip with small text.">
 </picture>
 
 Mermaid places every box by itself. Fitted to the page, the chart becomes one long strip with small text. The labels sit on grey patches on top of the lines. The last arrow loops back under the whole chart. There is no legend.
@@ -18,21 +18,21 @@ Mermaid places every box by itself. Fitted to the page, the chart becomes one lo
 The sequence:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="sample/figures/build-sequence-mermaid-dark.png">
-  <img src="sample/figures/build-sequence-mermaid.png" alt="The same build as a sequence drawn by Mermaid: every arrow looks the same, and every name repeats at the bottom.">
+  <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/build-sequence-mermaid-dark.png">
+  <img src="sample/diagrams/build-sequence-mermaid.png" alt="The same build as a sequence drawn by Mermaid: every arrow looks the same, and every name repeats at the bottom.">
 </picture>
 
 Mermaid draws a sequence fairly well. Still, every arrow looks the same, so a file written and a request cannot be told apart. The vertical lines run through three of the labels. You are a box, like the programs. The long names fill their boxes edge to edge, and every name repeats at the bottom. There is no legend.
 
-These pictures were made once for this page, with Mermaid `11.4.1` in Chrome, at the same width as the skill's pictures. Nothing in this repo remakes them. The skill itself never runs Mermaid.
+These pictures were made for this page, with Mermaid `11.4.1` in Chrome, at the same width as the skill's pictures. Nothing in this repo remakes them. The skill itself never runs Mermaid.
 
 ## To this: the skill's drawings
 
 The data flow:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="sample/figures/data-flow-dark.png">
-  <img src="sample/figures/data-flow.png" alt="Data flow of one build. Claude writes spec.py, render.py reads it and writes a light and a dark SVG for each figure, rsvg-convert draws each SVG as a PNG, and Claude looks at each PNG.">
+  <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/data-flow-dark.png">
+  <img src="sample/diagrams/data-flow.png" alt="Data flow of one build for design.md. Claude writes spec.py, render.py reads it and writes an SVG for each figure and theme in the skill's runtime folder, rsvg-convert draws each SVG as a PNG in design-diagrams next to design.md, and Claude looks at each PNG.">
 </picture>
 
 <details>
@@ -44,9 +44,9 @@ flowchart LR
   subgraph mac["YOUR MAC"]
     claude["Claude session + skill"] -->|writes| spec[("spec.py")]
     spec -->|reads| render["render.py + figlib"]
-    render -->|writes| outdir[("out/: light and dark .svg, .mmd")]
-    outdir -->|reads| exporter["rsvg-convert"]
-    exporter -->|writes| pngs[("figures/*.png")]
+    render -->|writes| runtime[("runtime/: an .svg per theme, .mmd")]
+    runtime -->|reads| exporter["rsvg-convert"]
+    exporter -->|writes| pngs[("design-diagrams/: the PNGs design.md shows")]
     pngs -->|looks at each| claude
   end
   you -->|words| claude
@@ -58,8 +58,8 @@ flowchart LR
 The sequence, which is the whole build in order:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="sample/figures/build-sequence-dark.png">
-  <img src="sample/figures/build-sequence.png" alt="One build, in order. Claude writes the spec and runs render.py. render.py draws every figure as a light and a dark SVG, then runs rsvg-convert once for each SVG. Claude looks at each PNG before it goes in a document.">
+  <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/build-sequence-dark.png">
+  <img src="sample/diagrams/build-sequence.png" alt="One build, in order. Claude asks which pictures the doc shows, writes the spec in the doc's runtime folder and runs render.py. render.py draws an SVG for each figure and theme, then runs rsvg-convert once for each, which writes the PNG next to the doc. Claude looks at each PNG, then pastes the Markdown into the doc.">
 </picture>
 
 <details>
@@ -73,18 +73,19 @@ sequenceDiagram
   participant F as Files (on this Mac)
   participant X as rsvg-convert (from librsvg)
   U->>C: "draw how the parts talk"
-  C->>F: writes spec.py
-  C->>R: render.py spec.py out
+  C->>U: light, dark or both?
+  U->>C: both
+  C->>F: writes spec.py in runtime/
+  C->>R: render.py --doc --theme both
   R->>F: reads spec.py
   Note over R: draws every box and arrow,<br/>checks the text in each box
-  R->>F: writes light and dark svg, mmd
+  R->>F: writes an svg per theme, mmd
   R->>X: rsvg-convert, once per svg
-  X->>F: reads one svg
   Note over X: at twice the size: 920<br/>units become 1840 pixels
-  X->>F: writes its PNG
-  R->>C: 2 figures, 4 PNGs
+  X->>F: reads an svg, writes its PNG
+  R->>C: 4 PNGs, the Markdown
   C->>F: looks at each PNG once
-  C->>U: the picture, in your doc
+  C->>U: the pictures, in your doc
 ```
 
 </details>
@@ -93,12 +94,13 @@ Every box, arrow and label sits where Claude put it. The legend inside each pict
 
 ## TL;DR: the short version
 
-1. Claude writes a small Python file, the spec. In a data flow, the spec places every box, arrow and label by hand. In a sequence, the spec lists the messages in order, and the code places them.
-2. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `figlib.py`. It checks that the text in boxes and sequences fits, and that each box is tall enough for its text. It writes every figure twice: a light SVG and a dark SVG, each complete on its own.
-3. `rsvg-convert` draws each SVG as a PNG, at twice its size.
-4. Claude looks at every picture. Then Claude pastes each picture into a document, with the Mermaid text folded underneath.
+1. Claude asks once which pictures the doc shows: light, dark or both.
+2. Claude writes a small Python file, the spec, in the doc's own folder inside the skill's `runtime/` folder, which git ignores. In a data flow, the spec places every box, arrow and label by hand. In a sequence, the spec lists the messages in order, and the code places them.
+3. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `figlib.py`. It checks that the text in boxes and sequences fits, and that each box is tall enough for its text. It writes one SVG per figure and theme, each complete on its own, in the runtime folder.
+4. `rsvg-convert` draws each SVG as a PNG, at twice its size, into a folder next to the doc and named after it: `design-diagrams/` for `design.md`.
+5. Claude looks at every picture. Then Claude pastes the Markdown that `render.py` prints into the doc, with the Mermaid text folded underneath.
 
-A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
+In your repo, only the doc and its `-diagrams` folder change. A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
 
 ## Step by step, with the sample
 
@@ -106,12 +108,12 @@ The sample in this folder builds the skill's two pictures above: the data flow a
 
 | Path | What it is |
 |---|---|
-| `sample/spec.py` | The input: two figures, in 86 lines of Python |
-| `sample/figures/` | The pictures, copied from the build's `out/figures/`, plus Mermaid's drawings of both, for comparison |
+| `sample/spec.py` | The input: two figures, in 89 lines of Python |
+| `sample/diagrams/` | The pictures, copied from the build's `runtime/sample/`, plus Mermaid's drawings of both, for comparison |
 
 ### Step 1: Claude writes the spec
 
-A spec is a Python file. figlib reads three names from it. Only `FIGURES` is required.
+A spec is a Python file. figlib reads two names from it. Only `FIGURES` is required.
 
 | Name | What it holds |
 |---|---|
@@ -156,7 +158,7 @@ In a data flow, the layout is the hard part. The layout is Claude's job. figlib 
 A sequence is different: figlib places everything. Two rows of the sample's sequence:
 
 ```python
-("msg", "C", "R", "render.py spec.py out", "say"),
+("msg", "C", "R", "render.py --doc --theme both", "say"),
 ("note", "R", ["draws every box and arrow,", "checks the text in each box"]),
 ```
 
@@ -178,30 +180,42 @@ The Mac needs two things:
 1. Python 3
 2. `rsvg-convert`, from librsvg, a library that draws SVG. Homebrew installs it once per Mac: `brew install librsvg`
 
+The sample has no doc, so it builds with `--out`, which puts every file in one folder:
+
 ```bash
-cd skills/readable-diagrams/scripts
-bash doctor.sh                                 # checks the Mac, changes nothing
-python3 -I render.py ../sample/spec.py out
+cd skills/readable-diagrams
+bash scripts/doctor.sh                                             # checks the Mac, changes nothing
+python3 -I scripts/render.py sample/spec.py --out runtime/sample
 ```
 
 The real output of the last command:
 
 ```text
-built 2 figure(s) in out: data-flow, build-sequence
-4 PNG(s), light and dark, in out/figures. Look at each one once before you ship it.
+built 2 figure(s) in runtime/sample: data-flow, build-sequence
+4 PNG(s), light and dark, in runtime/sample. Look at each one once before you ship it.
 ```
+
+For a doc, Claude runs two commands. `SKILL` stands for the skill's folder, and `RUNTIME` for the folder that `where` prints:
+
+```bash
+python3 -I SKILL/scripts/render.py where docs/design.md
+python3 -I SKILL/scripts/render.py RUNTIME/spec.py --doc docs/design.md --theme both
+```
+
+`where` makes the doc's folder in `runtime/` and prints it. The folder's name is `design-`, then 8 characters from a hash of the doc's full path, so two docs named `design.md` never share a spec. Claude writes `spec.py` there. With `--doc`, the SVG and Mermaid files go in that folder too, and the PNGs go next to the doc, in `docs/design-diagrams/`. `--theme` is required with `--doc`. Without it, `render.py` stops and asks for light, dark or both.
 
 `doctor.sh` checks Python, `rsvg-convert` and the two fonts. It prints one line per check, and a → line under anything missing. For `rsvg-convert`, that line is `brew install librsvg`. The doctor changes nothing.
 
 Add `--no-png` to stop after the SVG files. `SKILL.md` has Claude build that way first. Text that does not fit then shows up before any PNG is drawn.
 
-Steps 3 to 5 all happen inside this one `render.py` command. `render.py` does three things:
+Steps 3 to 5, and the Markdown for step 7, all come from this one `render.py` command. `render.py` does four things:
 
-1. It loads the spec file as a Python module.
-2. It calls `figlib.build`, which writes two SVG files per figure, light and dark, and the Mermaid files (steps 3 and 4).
+1. It loads the spec file as a Python module, without writing a `__pycache__` folder next to it.
+2. It calls `figlib.build`, which writes an SVG file per figure and theme, and the Mermaid files (steps 3 and 4).
 3. It runs `rsvg-convert` once for each SVG file (step 5). If `rsvg-convert` fails on a file, the build stops and prints `rsvg-convert`'s own error.
+4. With `--doc`, it removes the doc's PNGs in a theme the doc no longer shows, then prints the Markdown for each figure (step 7).
 
-When `rsvg-convert` is not installed, `render.py` catches the error and runs `doctor.sh`. It prints the doctor's report: the same lines the doctor prints on its own.
+When `rsvg-convert` is not installed, `render.py` catches the error and runs `doctor.sh`. It prints the doctor's report: the same lines the doctor prints on its own. A failed export leaves no empty folder next to the doc.
 
 The `-I` flag runs Python in isolated mode. Isolated mode ignores your own Python settings, such as `PYTHONPATH`. So your settings cannot change which code runs. Isolated mode also leaves the script's folder off the import path. So `render.py` adds its own folder to the path. Without that step, `import figlib` would fail.
 
@@ -238,11 +252,11 @@ The fix is fewer words or a wider box, never a smaller font.
 
 Two kinds of text skip the check. The first is a word placed with `label()`, such as every arrow word in the data flow. The second is a zone subtitle. figlib cannot know how much room a free word has. The look in step 6 is their only check.
 
-figlib also writes the sequence as Mermaid text, in `out/build-sequence.mmd`. That text is the closed block under the sequence picture above.
+figlib also writes the sequence as Mermaid text, in `runtime/sample/build-sequence.mmd`. That text is the closed block under the sequence picture above.
 
 A data flow gets a Mermaid file only when the spec gives one. figlib cannot write one itself. A canvas holds only shapes at positions, so it does not know which box an arrow joins. The sample gives its Mermaid text by hand, under the `"mermaid"` key.
 
-### Step 4: each figure becomes two SVG files, light and dark
+### Step 4: each figure becomes an SVG file per theme
 
 figlib puts each figure on a card, 920 units wide. The card holds the arrow legend first, cut down to the kinds this figure uses, then the figure. Both sample figures use only two arrow kinds, so each legend shows two entries.
 
@@ -257,7 +271,7 @@ Every colour is a token: a named colour with a light value and a dark value.
 | `--file` | `file` arrows | `#0A7468` | `#3DD6C2` |
 | `--ring` | `ring` arrows | `#B04F08` | `#F4B14F` |
 
-The light file, `out/data-flow.svg`, holds the light values. The dark file, `out/data-flow-dark.svg`, holds the dark values. So each file is complete on its own: open either one in a browser, and it looks like its PNG.
+The light file, `runtime/sample/data-flow.svg`, holds the light values. The dark file, `runtime/sample/data-flow-dark.svg`, holds the dark values. So each file is complete on its own: open either one in a browser, and it looks like its PNG. A doc that shows one theme gets only that theme's file.
 
 Words use Arial. File names use Menlo. Both fonts come with every Mac, so nothing is downloaded.
 
@@ -268,8 +282,10 @@ Words use Arial. File names use Menlo. Both fonts come with every Mac, so nothin
 `render.py` runs it once for each SVG file:
 
 ```bash
-rsvg-convert --zoom 2 --output out/figures/data-flow.png out/data-flow.svg
+rsvg-convert --zoom 2 --output runtime/sample/data-flow.png runtime/sample/data-flow.svg
 ```
+
+With `--doc`, the `--output` path is in the doc's `-diagrams` folder instead, such as `docs/design-diagrams/data-flow.png`.
 
 The card is 920 units wide, so at `--zoom 2` the PNG is 1840 pixels wide. Outside the card's rounded corners, the PNG is transparent.
 
@@ -278,7 +294,7 @@ The light file becomes `<stem>.png`, and the dark file becomes `<stem>-dark.png`
 | Picture | Size in pixels |
 |---|---|
 | `data-flow.png` | 1840 × 846 |
-| `build-sequence.png` | 1840 × 1370 |
+| `build-sequence.png` | 1840 × 1450 |
 
 ### Step 6: Claude looks at every PNG once
 
@@ -293,19 +309,13 @@ If Claude finds one, Claude changes the spec and builds again. The width check c
 
 ### Step 7: the picture goes into a document
 
-The build leaves the PNGs in `out/figures/`. Claude copies them into a `figures/` folder next to the document. For this page, that folder is `sample/figures/`.
+With `--doc`, the PNGs are already next to the document, in its `-diagrams` folder. `render.py` prints the Markdown for each figure, and Claude pastes it into the document where the picture goes.
 
-Then Claude calls `figlib.picture_block` from Python. Claude pastes the Markdown it returns into the document:
+With both themes, the Markdown is a `<picture>` element. It shows the dark PNG in dark mode, and the light PNG otherwise. With one theme, it is a plain Markdown image of that theme's PNG. Under either one, a closed `<details>` element holds the Mermaid text, and GitHub draws that text as a plain Mermaid chart.
 
-```python
-figlib.picture_block("data-flow", alt, mermaid, folder="sample/figures")
-```
+Anyone can copy or edit the Mermaid text. Editing the text does not change the PNG. To change the picture, change the spec and build again. To change the theme, build again with the new `--theme`: `render.py` removes the PNGs the doc no longer shows, and prints the new Markdown.
 
-The block has two parts. A `<picture>` element shows the dark PNG in dark mode. In light mode it shows the light PNG. A closed `<details>` element holds the Mermaid text, and GitHub draws that text as a plain Mermaid chart.
-
-Anyone can copy or edit the Mermaid text. Editing the text does not change the PNG. To change the picture, change the spec and build again.
-
-The two skill pictures on this page are such blocks.
+The two skill pictures on this page are such blocks. Their PNGs sit in `sample/diagrams/`, copied from `runtime/sample/`, because two pages show them: this one and the README.
 
 ## What each file does
 
@@ -313,17 +323,19 @@ The two skill pictures on this page are such blocks.
 |---|---|---|
 | `SKILL.md` | Instructions for Claude | When to use the skill, the steps, and the style rules |
 | `HOW-IT-WORKS.md` | Markdown | This page |
-| `.gitignore` | git settings | Keeps what a build makes out of git, so a copied skill folder stays clean |
+| `.gitignore` | git settings | Keeps `runtime/` and Python caches out of git, so a copied skill folder stays clean |
 | `scripts/figlib.py` | Python, standard library only | The canvas, sequences, text checks, box heights, style sheet, legend card, Mermaid text and picture block |
-| `scripts/render.py` | Python | One command: build, then draw each PNG with `rsvg-convert` |
+| `scripts/render.py` | Python | One command: `where` finds a doc's runtime folder; a build writes the SVGs, draws each PNG with `rsvg-convert` and prints the Markdown |
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_figlib.py` | Python | 23 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, and a relative output folder works |
+| `scripts/tests/test_figlib.py` | Python | 34 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a doc's folder gets only the pictures it shows, a theme change removes the other theme's pictures, and the Markdown fits one theme or both |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new figure |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
+| `runtime/` | Made by `render.py`, ignored by git | One folder per doc, with its spec, SVGs and Mermaid files |
 
 ## Known limits
 
 - **The width check is an average, not a ceiling.** A long label at its limit can run up to about a fifth wider than its estimate. Step 6 catches it.
 - **Free labels are not checked.** Words placed with `label()`, and zone subtitles, rely on step 6.
 - **The defaults are for a Mac.** Arial and Menlo come with macOS. On another system, `rsvg-convert` uses the nearest fonts it has, and the width checks are less exact. The doctor's install line uses Homebrew.
+- **The runtime folder belongs to the installed skill.** A plugin update installs the skill in a new folder, with an empty `runtime/`.

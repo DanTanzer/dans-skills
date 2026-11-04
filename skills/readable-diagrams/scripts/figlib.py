@@ -398,12 +398,26 @@ def card(svg, theme, legend_texts=None, label=""):
 
 
 # ====================================================================================== embedding in Markdown
-def picture_block(stem, alt, mermaid=None, folder="figures"):
-    """The Markdown that shows a figure: the dark PNG in dark mode, the light one otherwise, then the Mermaid text closed."""
+THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, and the PNGs made from them
+BOTH = ("light", "dark")
+
+
+def check_alt(alt):
     if re.search(r'["\n]', alt):
-        raise FigureError("alt text may not hold a quote or a line break")
-    out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.png">\n'
-           f'  <img src="{folder}/{stem}.png" alt="{alt}">\n</picture>\n')
+        raise FigureError(f"alt text may not hold a quote or a line break: {alt[:60]!r}")
+
+
+def picture_block(stem, alt, folder, mermaid=None, themes=BOTH):
+    """The Markdown that shows a figure, then its Mermaid text in a closed block. With both themes, a <picture> that
+    shows the dark PNG in dark mode and the light one otherwise. With one theme, a plain Markdown image of its PNG."""
+    check_alt(alt)
+    if set(themes) == set(BOTH):
+        out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.png">\n'
+               f'  <img src="{folder}/{stem}.png" alt="{alt}">\n</picture>\n')
+    else:
+        (theme,) = themes
+        shown = alt.replace("[", "\\[").replace("]", "\\]")
+        out = f"![{shown}]({folder}/{stem}{THEME_SUFFIX[theme]}.png)\n"
     if mermaid:
         out += ("\n<details>\n<summary>The same diagram as Mermaid text (open it to edit)</summary>\n\n"
                 f"```mermaid\n{mermaid}\n```\n\n</details>\n")
@@ -411,15 +425,13 @@ def picture_block(stem, alt, mermaid=None, folder="figures"):
 
 
 # ====================================================================================== building from a spec
-THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, like the PNGs made from them
-
-
-def build(spec, out_dir):
+def build(spec, out_dir, themes=BOTH):
     """spec: a module or object with FIGURES, a list of dicts, each with stem, alt and either svg (a string or a
     callable) or seq (a sequence dict, drawn and also written as Mermaid). Optional: mermaid, and LEGEND on the spec,
     new words for any of the four arrow meanings.
-    Writes out_dir/<stem>.svg and out_dir/<stem>-dark.svg, each complete on its own, and <stem>.mmd where there is
-    Mermaid. Returns the figure list; each entry's "files" maps light and dark to its SVG file."""
+    Writes out_dir/<stem>.svg for light and out_dir/<stem>-dark.svg for dark, for each theme in themes, each complete
+    on its own, and <stem>.mmd where there is Mermaid. Returns the figure list; each entry's "files" maps each theme
+    built to its SVG file."""
     os.makedirs(out_dir, exist_ok=True)
     legend_texts = {**LEGEND_TEXT, **(getattr(spec, "LEGEND", None) or {})}
     figures = []
@@ -427,13 +439,14 @@ def build(spec, out_dir):
         stem = f["stem"]
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", stem):
             raise FigureError(f"stem {stem!r}: use lower-case letters, digits and hyphens")
+        check_alt(f["alt"])
         if "seq" in f:
             svg, mermaid = render_sequence(f["seq"]), mermaid_sequence(f["seq"])
         else:
             svg, mermaid = f["svg"]() if callable(f["svg"]) else f["svg"], f.get("mermaid", "")
         files = {}
-        for theme, suffix in THEME_SUFFIX.items():
-            files[theme] = os.path.join(out_dir, f"{stem}{suffix}.svg")
+        for theme in themes:
+            files[theme] = os.path.join(out_dir, f"{stem}{THEME_SUFFIX[theme]}.svg")
             with open(files[theme], "w", encoding="utf-8") as handle:
                 handle.write(card(svg, theme, legend_texts, f["alt"]))
         if mermaid:

@@ -32,7 +32,7 @@ dans-skills/                         repository, marketplace and plugin "dans-sk
         ├── sample/                  a small spec and the pictures it makes
         └── scripts/                 the code the skill runs
             ├── figlib.py            the drawing library: hand-laid-out SVG in one house style
-            ├── render.py            one command: builds a figure set, then draws the PNGs with rsvg-convert
+            ├── render.py            one command: builds a spec, draws its PNGs with rsvg-convert, prints the Markdown
             ├── example_spec.py      a worked example with three figures; copy it to start a set
             ├── doctor.sh            checks the Mac: Python, rsvg-convert and the fonts
             └── tests/

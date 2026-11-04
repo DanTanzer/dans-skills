@@ -1,6 +1,7 @@
-"""A worked example: three figures of a small notes sync. Copy this file to start a new set.
+"""A worked example: three figures of a small notes sync. To start a new set, copy this file into the doc's runtime
+folder as spec.py (SKILL.md, step 2). To build this example on its own, from the skill's folder:
 
-    python3 -I render.py example_spec.py out
+    python3 -I scripts/render.py scripts/example_spec.py --out runtime/example
 
 A spec defines FIGURES: a list of dicts with stem (the PNG name), alt (one sentence a screen reader gets, no quotes)
 and either svg (a callable that returns SVG, for a data flow drawn on a Canvas) or seq (a sequence dict).
