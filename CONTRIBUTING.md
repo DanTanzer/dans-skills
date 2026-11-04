@@ -32,16 +32,14 @@ dans-skills/                         repository, marketplace and plugin "dans-sk
         ├── sample/                  a small spec and the pictures it makes
         └── scripts/                 the code the skill runs
             ├── figlib.py            the drawing library: hand-laid-out SVG in one house style
-            ├── render.py            one command: builds a figure set and exports the PNGs
+            ├── render.py            one command: builds a figure set, then draws the PNGs with rsvg-convert
             ├── example_spec.py      a worked example with three figures; copy it to start a set
-            ├── export_png.mjs       photographs each figure as a light and a dark PNG
-            ├── doctor.sh            checks the Mac; --install installs puppeteer, no browser download
-            ├── package.json         the one Node dependency: puppeteer 19.11.1
+            ├── doctor.sh            checks the Mac: Python, rsvg-convert and the fonts
             └── tests/
                 └── test_figlib.py   checks the example and the sample build, and the text checks refuse what they should
 ```
 
-The `.gitignore` at the top keeps Python and Node caches and local tool folders out of git. Each skill also keeps its own `.gitignore`, so a skill folder copied on its own stays clean. A new skill is a new folder under `skills/`, with its own `SKILL.md` and its own `.gitignore`.
+The `.gitignore` at the top keeps Python caches and local tool folders out of git. Each skill also keeps its own `.gitignore`, so a skill folder copied on its own stays clean. A new skill is a new folder under `skills/`, with its own `SKILL.md` and its own `.gitignore`.
 
 ## Check a change
 

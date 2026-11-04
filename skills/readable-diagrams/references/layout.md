@@ -10,8 +10,8 @@ The numbers behind `example_spec.py`, so a new figure can start from them instea
 | `t` | a plain line, an arrow label | 14px | 6.2 |
 | `ts` | a muted aside, a zone subtitle | 12.5px muted | 5.6 |
 | `zt` | a zone title, uppercase, letter-spaced | 13px bold | 10.4 |
-| `tm tb` | a file or folder name in a big store box | 15px mono bold | 9.0 |
-| `tm tb sm` | a file name in a small store box | 12.5px mono bold | 7.5 |
+| `tm tb` | a file or folder name in a big store box | 15px mono bold | 9.03 |
+| `tm tb sm` | a file name in a small store box | 12.5px mono bold | 7.53 |
 
 `figlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that. `zt` is the exception: it sits near the widest capitals, because a subtitle that follows the title is placed by it.
 
@@ -24,15 +24,17 @@ The example places three 300-wide panels at x = 20, 350 and 680 with a 30 gap, a
 | ring bus | 22 | a line | dashed amber, with a two-headed stub down into each session |
 | person pill | 40 | 36 | centred on the panel, `words` down and `report` up to the session box |
 | panel top | 100 | | the zone rectangle starts; its title sits at y + 24 |
-| session box | 134 | 72 | the bold title and two small lines |
-| command and results | 206 to 278 | | two say arrows at x + 20 and x + 96 of the script box |
-| script box | 278 | 140 | two-line bold title, three plain lines, one muted |
+| session box | 134 | 84 | the bold title and two small lines |
+| command and results | 218 to 278 | | two say arrows at x + 20 and x + 96 of the script box |
+| script box | 278 | 148 | two-line bold title, three plain lines, one muted |
 | local files | 278, 332, 386 | 44 each | 110 wide, dashed, mono name and one small line |
 | panel bottom | 456 | | |
-| file arrows | 418 to 560 | | down at script x + 20, up at x + 96, labels 40 below the script |
+| file arrows | 426 to 560 | | down at script x + 20, up at x + 96, labels 40 below the script |
 | store zone | 516 | 280 | title at y + 24 |
 | row A | 560 | 70 | processes in the store zone: a server, a page |
 | row B | 660 | 110 | the files: 380, 200 and 300 wide with 20 gaps |
+
+The session and script heights come from `box_height`, the exact height their text needs: a box's last line sits 16 above its bottom edge.
 
 Two machines: use 450-wide panels at x = 20 and 530, and mirror the right panel so both scripts face the middle. Four machines: 230-wide panels at x = 20, 265, 510 and 755, with the local files below the script instead of beside it.
 
@@ -62,4 +64,4 @@ A two-headed arrow (`both=True`) means read and write, or a nudge that goes eith
 
 ## The export card
 
-The exporter builds one card per figure: the legend entries that figure uses, then the SVG, on the surface colour with a one-pixel border, 920 wide, photographed at 2x with a transparent outside. A figure that uses only `file` and `say` gets a two-entry legend.
+figlib builds one card per figure and theme: the legend entries that figure uses, then the figure, on the surface colour with a one-unit border, 920 wide. The figure inside is 898 wide, so a 1000-wide figure draws at 0.898. Legend entries flow like words, 18 apart, and wrap to a second row when they need it. `rsvg-convert --zoom 2` draws the card at 1840 pixels, transparent outside its rounded corners. A figure that uses only `file` and `say` gets a two-entry legend.

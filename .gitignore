@@ -1,10 +1,9 @@
 # macOS
 .DS_Store
 
-# Python and Node
+# Python
 __pycache__/
 *.pyc
-node_modules/
 
 # Local tool state, never committed
 .claude/

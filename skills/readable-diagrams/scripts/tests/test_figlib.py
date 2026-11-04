@@ -1,9 +1,11 @@
-"""figlib builds the example, every SVG is well-formed, every label fits, and the Markdown block has the right shape."""
+"""figlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
+height their text needs, the doctor names rsvg-convert, and the Markdown block has the right shape."""
 import contextlib
 import io
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -16,60 +18,93 @@ sys.path.insert(0, SCRIPTS)
 import figlib  # noqa: E402
 import render  # noqa: E402
 
-# A stand-in for puppeteer: enough for Node to find it, load it and read its version.
-FAKE_PUPPETEER = {
-    "package.json": '{"name": "puppeteer", "version": "0.0.0-test", "exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}',
-    "index.mjs": "export default {};\n",
-    "index.cjs": "module.exports = {};\n",
-}
+SAMPLE = os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py")
 
 
-def fake_puppeteer(node_modules):
-    folder = os.path.join(node_modules, "puppeteer")
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def read_bytes(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def png_size(path):
+    with open(path, "rb") as handle:
+        return struct.unpack(">II", handle.read(24)[16:24])
+
+
+def fake_bin(folder, **scripts):
+    """A folder of stand-in commands: name=shell body. With /usr/bin and /bin after it, it makes a PATH."""
     os.makedirs(folder)
-    for name, body in FAKE_PUPPETEER.items():
-        with open(os.path.join(folder, name), "w", encoding="utf-8") as handle:
-            handle.write(body)
+    for name, body in scripts.items():
+        path = os.path.join(folder, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"#!/bin/sh\n{body}\n")
+        os.chmod(path, 0o755)
+    return f"{folder}:/usr/bin:/bin"
 
 
-def doctor_copy(scripts_dir):
-    """A copy of doctor.sh in scripts_dir, so the doctor asks Node from there."""
-    os.makedirs(scripts_dir)
-    shutil.copy(os.path.join(SCRIPTS, "doctor.sh"), scripts_dir)
-    return os.path.join(scripts_dir, "doctor.sh")
+def run_doctor(path_value):
+    env = dict(os.environ, PATH=path_value)
+    return subprocess.run(["/bin/bash", os.path.join(SCRIPTS, "doctor.sh")], capture_output=True, text=True, env=env)
 
 
 class ExampleBuildsTest(unittest.TestCase):
     def setUp(self):
         self.out = tempfile.mkdtemp()
-        self.spec = render.load_spec(os.path.join(SCRIPTS, "example_spec.py"))
-        self.figures = figlib.build(self.spec, self.out)
+        self.figures = figlib.build(render.load_spec(os.path.join(SCRIPTS, "example_spec.py")), self.out)
 
-    def test_three_figures_with_svg_and_html(self):
+    def test_three_figures_each_with_a_light_and_a_dark_svg(self):
         self.assertEqual(["sync-data-flow", "sync-sequence-1-ask-and-answer", "sync-sequence-2-broadcast"], [f["stem"] for f in self.figures])
-        names = sorted(os.listdir(self.out))
-        self.assertIn("figures.html", names)
+        names = os.listdir(self.out)
         for f in self.figures:
             self.assertIn(f"{f['stem']}.svg", names)
+            self.assertIn(f"{f['stem']}-dark.svg", names)
 
     def test_every_svg_is_well_formed_xml(self):
         for f in self.figures:
-            with open(os.path.join(self.out, f"{f['stem']}.svg"), encoding="utf-8") as handle:
-                xml.dom.minidom.parseString(handle.read())
+            for path in f["files"].values():
+                xml.dom.minidom.parseString(read(path))
+
+    def test_each_svg_is_complete_on_its_own(self):
+        for f in self.figures:
+            for path in f["files"].values():
+                svg = read(path)
+                self.assertIn("<style>", svg)
+                self.assertIn('<rect class="card"', svg)
+                self.assertNotIn("var(", svg, f"{path}: a colour still names a token")
+                self.assertIsNone(re.search(r"href=|@import|url\((?!#)", svg), f"{path}: reaches outside the file")
+
+    def test_the_light_and_the_dark_svg_carry_their_own_colours(self):
+        light, dark = (read(self.figures[0]["files"][theme]) for theme in ("light", "dark"))
+        self.assertIn(f".card {{ fill: {figlib.THEMES['light']['--surface']};", light)
+        self.assertIn(f".card {{ fill: {figlib.THEMES['dark']['--surface']};", dark)
+        self.assertEqual(light.replace(figlib.theme_css("light"), ""), dark.replace(figlib.theme_css("dark"), ""))
+
+    def test_the_legend_shows_only_the_arrow_kinds_a_figure_draws(self):
+        self.assertEqual(["file", "ring", "say", "loc"], figlib.used_kinds(self.figures[0]["svg"]))
+        sample = figlib.build(render.load_spec(SAMPLE), tempfile.mkdtemp())[0]
+        self.assertEqual(["file", "say"], figlib.used_kinds(sample["svg"]))
+        svg = read(sample["files"]["light"])
+        self.assertIn('class="lg-file"', svg)
+        self.assertNotIn('class="lg-ring"', svg)
+
+    def test_a_figure_given_as_svg_text_with_its_own_size_still_makes_a_valid_card(self):
+        spec = type("Spec", (), {"FIGURES": [{"stem": "raw", "alt": "A line.", "svg": (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="50" viewBox="0 0 1000 100">'
+            '<line class="a a-file" x1="10" y1="50" x2="990" y2="50"/></svg>')}]})
+        card = read(figlib.build(spec, tempfile.mkdtemp())[0]["files"]["light"])
+        xml.dom.minidom.parseString(card)
+        self.assertIn('<svg x="11" y="43.4" width="898" height="89.8"', card)
 
     def test_sequences_also_get_mermaid_without_semicolons(self):
         for stem in ("sync-sequence-1-ask-and-answer", "sync-sequence-2-broadcast"):
-            with open(os.path.join(self.out, f"{stem}.mmd"), encoding="utf-8") as handle:
-                mmd = handle.read()
+            mmd = read(os.path.join(self.out, f"{stem}.mmd"))
             self.assertTrue(mmd.startswith("sequenceDiagram"))
             self.assertNotIn(";", mmd)
-
-    def test_the_page_holds_the_legend_and_one_figure_card_per_figure(self):
-        with open(os.path.join(self.out, "figures.html"), encoding="utf-8") as handle:
-            page = handle.read()
-        self.assertIn('class="legend"', page)
-        self.assertEqual(3, page.count('<figure data-png="'))
-        self.assertNotIn("https://", page)
 
 
 class FitChecksTest(unittest.TestCase):
@@ -101,9 +136,28 @@ class FitChecksTest(unittest.TestCase):
             figlib.line(0, 0, 1, 1, "http", "p")
 
 
+class BoxHeightTest(unittest.TestCase):
+    SHAPES = [("title only", (), False), ("a title", ["one line", "two lines"], False),
+              ("two\nlines", ["plain", ("small", "ts")], False), ("a title", ["a fact", "an aside"], True)]
+
+    def test_box_height_is_the_least_height_a_box_accepts(self):
+        for title, lines, muted in self.SHAPES:
+            need = figlib.box_height(title, lines, muted)
+            figlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted)
+            with self.assertRaisesRegex(figlib.FigureError, f"needs {need}px: box_height"):
+                figlib.Canvas("b", 400, 300).box(10, 10, 200, need - 1, title, lines, muted)
+
+    def test_at_that_height_the_last_line_sits_16_above_the_bottom(self):
+        for title, lines, muted in self.SHAPES:
+            need = figlib.box_height(title, lines, muted)
+            svg = figlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted).svg()
+            last = max(float(y) for y in re.findall(r'<text class="[^"]*" x="[\d.]+" y="([\d.]+)"', svg))
+            self.assertEqual(16, 10 + need - last, title)
+
+
 class ZoneTitleTest(unittest.TestCase):
-    # Real widths, measured in Chrome in the zone title style: Arial bold capitals, 13px, 0.1 em letter-spacing.
-    MEASURED = {"MVP SHORTCUT": 119.4, "MOMENTUM": 88.4}
+    # Real widths, measured in rsvg-convert in the zone title style: Arial bold capitals, 13px, 0.1 em letter-spacing.
+    MEASURED = {"MVP SHORTCUT": 118.1, "MOMENTUM": 87.1}
 
     def test_a_zone_subtitle_starts_clear_of_its_title(self):
         for title, real in self.MEASURED.items():
@@ -115,75 +169,72 @@ class ZoneTitleTest(unittest.TestCase):
 class SampleBuildsTest(unittest.TestCase):
     def test_the_sample_builds_both_figures_with_mermaid(self):
         out = tempfile.mkdtemp()
-        spec = render.load_spec(os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py"))
-        figures = figlib.build(spec, out)
+        figures = figlib.build(render.load_spec(SAMPLE), out)
         self.assertEqual(["data-flow", "build-sequence"], [f["stem"] for f in figures])
         for f in figures:
             self.assertTrue(os.path.exists(os.path.join(out, f"{f['stem']}.mmd")))
 
 
 class DoctorTest(unittest.TestCase):
-    def test_a_missing_chrome_is_named_with_its_fix_and_fails(self):
-        env = dict(os.environ, CHROME_PATH="/nonexistent/chrome")
-        done = subprocess.run(["bash", os.path.join(SCRIPTS, "doctor.sh")], capture_output=True, text=True, env=env)
-        self.assertEqual(1, done.returncode)
-        self.assertIn("not found at /nonexistent/chrome", done.stdout)
-        self.assertIn("→ install Google Chrome", done.stdout)
-
-    @unittest.skipUnless(shutil.which("node"), "the puppeteer check needs Node")
-    def test_a_puppeteer_in_a_folder_above_the_scripts_counts(self):
+    def test_a_missing_rsvg_convert_is_named_with_the_brew_command_and_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            repo = os.path.realpath(tmp)
-            fake_puppeteer(os.path.join(repo, "node_modules"))
-            doctor = doctor_copy(os.path.join(repo, ".claude", "skills", "readable-diagrams", "scripts"))
-            done = subprocess.run(["bash", doctor], capture_output=True, text=True)
-        self.assertIn(f"puppeteer   0.0.0-test, in {repo}/node_modules", done.stdout)
-
-    @unittest.skipUnless(shutil.which("node"), "the puppeteer check needs Node")
-    def test_a_puppeteer_node_cannot_find_is_named_with_one_install_command(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            doctor = doctor_copy(os.path.join(os.path.realpath(tmp), "scripts"))
-            done = subprocess.run(["bash", doctor], capture_output=True, text=True)
+            done = run_doctor(fake_bin(os.path.join(tmp, "bin"), brew="exit 0"))
         self.assertEqual(1, done.returncode)
-        self.assertIn("puppeteer   Node cannot find it from the scripts folder", done.stdout)
-        self.assertIn(f"→ bash {doctor} --install", done.stdout)
+        self.assertIn("✗  rsvg-convert not found; it draws each SVG as a PNG", done.stdout)
+        self.assertIn("→ brew install librsvg", done.stdout)
+
+    def test_an_installed_rsvg_convert_is_named_with_its_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done = run_doctor(fake_bin(os.path.join(tmp, "bin"), **{"rsvg-convert": 'echo "rsvg-convert version 9.8.7"'}))
+        self.assertIn("✓  rsvg-convert 9.8.7", done.stdout)
+        self.assertNotIn("brew install librsvg", done.stdout)
 
 
 class RenderShowsTheDoctorTest(unittest.TestCase):
-    def test_a_puppeteer_node_cannot_load_prints_the_doctor_report(self):
-        node_says = "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'puppeteer' imported from /x/export_png.mjs"
-        failed = subprocess.CompletedProcess([], 1, "", node_says)
-        with tempfile.TemporaryDirectory() as out, mock.patch.object(render, "export", return_value=failed), \
+    def test_a_missing_rsvg_convert_prints_the_doctor_report(self):
+        with tempfile.TemporaryDirectory() as out, mock.patch.object(render, "rasterize", side_effect=FileNotFoundError), \
                 contextlib.redirect_stdout(io.StringIO()) as said:
             code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), out])
         self.assertEqual(1, code)
-        self.assertIn("The PNG export cannot run yet. The doctor says:", said.getvalue())
+        self.assertIn("rsvg-convert was not found, so the PNG export cannot run. The doctor says:", said.getvalue())
         self.assertIn("readable-diagrams doctor: can this Mac export pictures?", said.getvalue())
 
 
 class RenderPathsTest(unittest.TestCase):
-    def test_a_relative_out_folder_reaches_the_exporter_in_full(self):
+    def test_a_relative_out_folder_reaches_rsvg_convert_as_given(self):
         calls = []
 
-        def node_run(command, **kwargs):
-            calls.append((command, kwargs))
-            return subprocess.CompletedProcess(command, 0, "wrote a\nwrote b\nwrote c\n", "")
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs, os.path.isfile(command[-1]), os.path.isdir(os.path.dirname(command[-2]))))
+            return subprocess.CompletedProcess(command, 0, "", "")
 
         start = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
-            work = os.path.realpath(tmp)
             try:
-                os.chdir(work)
-                with mock.patch.object(render.subprocess, "run", node_run), contextlib.redirect_stdout(io.StringIO()):
+                os.chdir(tmp)
+                with mock.patch.object(render.subprocess, "run", fake_run), contextlib.redirect_stdout(io.StringIO()):
                     code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), "out"])
             finally:
                 os.chdir(start)
         self.assertEqual(0, code)
-        self.assertEqual(2, len(calls))
-        for command, kwargs in calls:
-            self.assertEqual(os.path.join(work, "out", "figures.html"), command[2])
-            self.assertEqual(os.path.join(work, "out", "figures"), command[3])
-            self.assertEqual(render.HERE, kwargs["cwd"])
+        self.assertEqual(6, len(calls))
+        for command, kwargs, svg_there, png_folder_there in calls:
+            self.assertEqual(["rsvg-convert", "--zoom", "2", "--output"], command[:4])
+            self.assertTrue(command[-1].startswith(os.path.join("out", "sync-")) and command[-1].endswith(".svg"))
+            self.assertEqual(os.path.join("out", "figures"), os.path.dirname(command[-2]))
+            self.assertTrue(svg_there and png_folder_there, command)
+            self.assertNotIn("cwd", kwargs)
+
+    @unittest.skipUnless(shutil.which("rsvg-convert"), "needs rsvg-convert: brew install librsvg")
+    def test_rsvg_convert_draws_each_svg_as_an_1840_wide_png(self):
+        with tempfile.TemporaryDirectory() as out, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, render.main(["render.py", SAMPLE, out]))
+            pngs = sorted(os.listdir(os.path.join(out, "figures")))
+            self.assertEqual(["build-sequence-dark.png", "build-sequence.png", "data-flow-dark.png", "data-flow.png"], pngs)
+            for name in pngs:
+                self.assertEqual(1840, png_size(os.path.join(out, "figures", name))[0], name)
+            light, dark = (read_bytes(os.path.join(out, "figures", n)) for n in ("data-flow.png", "data-flow-dark.png"))
+        self.assertNotEqual(light, dark)
 
 
 class PictureBlockTest(unittest.TestCase):

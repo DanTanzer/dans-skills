@@ -4,18 +4,21 @@
 
 A spec defines FIGURES: a list of dicts with stem (the PNG name), alt (one sentence a screen reader gets, no quotes)
 and either svg (a callable that returns SVG, for a data flow drawn on a Canvas) or seq (a sequence dict).
-TITLE names the page. LEGEND, optional, renames the four arrow meanings for this set.
+LEGEND, optional, renames any of the four arrow meanings for this set. box_height gives a box the exact height
+its text needs.
 """
-from figlib import Canvas
-
-TITLE = "Notes sync figures"
+from figlib import Canvas, box_height
 
 # ====================================================================================== the data flow
 # One panel per machine across the top, the store across the bottom, a ring bus above the machines. Fixed y positions
 # keep the three panels identical, which is what makes the picture readable: the eye learns one panel and reuses it.
 PANELS = (("a", 20, "LAPTOP A", ""), ("b", 350, "LAPTOP B", ""), ("host", 680, "DESKTOP", "owner and host"))
 BUS_Y, PILL_Y, PANEL_Y, PANEL_H = 22, 40, 100, 356
-CLAUDE_Y, SCRIPT_Y, SCRIPT_H = 134, 278, 140
+CLAUDE_Y, SCRIPT_Y = 134, 278
+SESSION = ("Claude session + skill", [("turns a request into one command", "ts"), ("hook: prints the unread count", "ts")])
+SESSION_H = box_height(*SESSION)  # 84: a bold title and two small lines
+SCRIPT_TITLE, SCRIPT_LINES = "sync\nscript", ["protocol", "checks", "status"]
+SCRIPT_H = box_height(SCRIPT_TITLE, SCRIPT_LINES + ["this folder"], muted_last=True)  # 148: two bold lines, four more
 STORE_Y, ROW_A, ROW_B, H = 516, 560, 660, 812
 
 DFD_ALT = ("Data flow of a notes sync. Three machines each run a Claude session and the sync script. The two laptops "
@@ -37,21 +40,20 @@ def sync_data_flow():
         c.label(px + 117, PILL_Y + 56, "words", "end")
         c.label(px + 183, PILL_Y + 56, "report")
         c.arrow(px + 40, BUS_Y, px + 40, CLAUDE_Y, "ring", both=True)
-        c.box(px + 16, CLAUDE_Y, 268, 72, "Claude session + skill",
-              [("turns a request into one command", "ts"), ("hook: prints the unread count", "ts")])
+        c.box(px + 16, CLAUDE_Y, 268, SESSION_H, *SESSION)
         # the desktop is mirrored: its script sits on the right so its file arrows reach the folder, not the server
         sx = px + 170 if host else px + 16
         lx = px + 24 if host else px + 172
         down, up = sx + 20, sx + 96
-        c.arrow(down, CLAUDE_Y + 72, down, SCRIPT_Y, "say")
-        c.arrow(up, SCRIPT_Y, up, CLAUDE_Y + 72, "say")
+        c.arrow(down, CLAUDE_Y + SESSION_H, down, SCRIPT_Y, "say")
+        c.arrow(up, SCRIPT_Y, up, CLAUDE_Y + SESSION_H, "say")
         if host:
             c.label(down - 10, CLAUDE_Y + 108, "command", "end")
             c.label(up - 10, CLAUDE_Y + 108, "results", "end")
         else:
             c.label(down + 10, CLAUDE_Y + 108, "command")
             c.label(up + 8, CLAUDE_Y + 108, "results")
-        c.box(sx, SCRIPT_Y, 116, SCRIPT_H, "sync\nscript", ["protocol", "checks", "status", "this folder" if host else "HTTP store"], muted_last=True)
+        c.box(sx, SCRIPT_Y, 116, SCRIPT_H, SCRIPT_TITLE, SCRIPT_LINES + ["this folder" if host else "HTTP store"], muted_last=True)
         for i, (name, sub2, both) in enumerate((("machine.json", "name, server", False), ("read list", "ids shown", True), ("stamp", "last activity", True))):
             y = SCRIPT_Y + 54 * i
             c.store(lx, y, 110, 44, name, sub2)
@@ -128,6 +130,6 @@ BROADCAST = {
 
 FIGURES = [
     {"stem": "sync-data-flow", "alt": DFD_ALT, "svg": sync_data_flow},
-    {"stem": "sync-sequence-1-ask-and-answer", "alt": f"{ASK['title']}. {ASK['caption']}", "seq": ASK, "heading": ASK["title"]},
-    {"stem": "sync-sequence-2-broadcast", "alt": f"{BROADCAST['title']}. {BROADCAST['caption']}", "seq": BROADCAST, "heading": BROADCAST["title"]},
+    {"stem": "sync-sequence-1-ask-and-answer", "alt": f"{ASK['title']}. {ASK['caption']}", "seq": ASK},
+    {"stem": "sync-sequence-2-broadcast", "alt": f"{BROADCAST['title']}. {BROADCAST['caption']}", "seq": BROADCAST},
 ]
