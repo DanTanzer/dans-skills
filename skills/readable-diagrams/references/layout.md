@@ -62,6 +62,26 @@ Keep one story per sequence. When a flow has two parts (an exchange, then a broa
 
 A two-headed arrow (`both=True`) means read and write, or a nudge that goes either way.
 
+## Elbows
+
+A straight arrow is the first choice: move a box until the two ends share an x or a y. Look at the picture before you bend a line, because a box shifted a little left or right often lines the two ends up. When they cannot line up, because lining them up would break another row or column, the arrow is an elbow, not a diagonal. `elbow()` takes the same points, kind and `both` as `arrow()`, and draws the link with right-angle bends.
+
+| Shape | Call | Use it for |
+|---|---|---|
+| down, across, down | `elbow(x1, y1, x2, y2, kind)` | a box's bottom edge to the top edge of a box in a lower row |
+| across, down, across | `elbow(x1, y1, x2, y2, kind, first="h")` | a box's side to the side of a box in another column |
+| one bend, an L | `elbow(x1, y1, x2, y2, kind, at=y2)` | down from a box's bottom edge, then across into the side of a lower box |
+
+Where the bend goes:
+
+- The middle run sits in the gap between the two rows, or the two columns, never through a box and never along a box's edge. Halfway is the default; `at` moves it: a y for `first="v"`, an x for `first="h"`.
+- Leave a box from the edge that faces the other box: the bottom or top edge between rows, a side between columns. End on the other box's edge, not short of it.
+- Two elbows through the same gap get lanes of their own, at least 12 apart, so they never merge into one line.
+- The leg with the arrowhead is at least 16 long, so the head has room; a shorter one stops the build. With `both=True`, the first leg too.
+- Label the longest leg: above a run across, beside a run down, as with a straight arrow.
+
+`arrow()` refuses a diagonal. Pass `diagonal=True` only when the diagonal is the point, such as many arrows fanning into one box, where elbows would share legs.
+
 ## The export card
 
 figlib builds one card per figure and theme: the legend entries that figure uses, then the figure, on the surface colour with a one-unit border, 920 wide. The figure inside is 898 wide, so a 1000-wide figure draws at 0.898. Legend entries flow like words, 18 apart, and wrap to a second row when they need it. `rsvg-convert --zoom 2` draws the card at 1840 pixels, transparent outside its rounded corners. A figure that uses only `file` and `say` gets a two-entry legend.

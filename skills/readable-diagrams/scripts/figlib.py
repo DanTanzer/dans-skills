@@ -87,11 +87,51 @@ def svg_open(width, height, pfx, label):
     return f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{esc(label)}"><defs>{markers}</defs>'
 
 
-def line(x1, y1, x2, y2, kind, pfx, both=False):
+def _heads(kind, pfx, both):
     if kind not in ARROW_KINDS:
         raise FigureError(f"unknown arrow kind {kind!r}; use one of {ARROW_KINDS}")
     start = f' marker-start="url(#ah-{kind}-{pfx})"' if both else ""
-    return f'<line class="a a-{kind}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" marker-end="url(#ah-{kind}-{pfx})"{start}/>'
+    return f' marker-end="url(#ah-{kind}-{pfx})"{start}'
+
+
+def line(x1, y1, x2, y2, kind, pfx, both=False):
+    return f'<line class="a a-{kind}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"{_heads(kind, pfx, both)}/>'
+
+
+ELBOW_END_LEG = 16  # an arrowhead is about 11 units long; the leg it sits on needs room for it and a little line
+
+
+def elbow_points(x1, y1, x2, y2, first="v", at=None):
+    """The corners of an elbow from (x1, y1) to (x2, y2). first="v": straight down or up, across at y=at, then straight
+    into the end. first="h": sideways, down or up at x=at, then sideways in. at is halfway unless given; at equal to
+    an end's own y (or x) leaves a single bend, an L. Legs of no length are dropped."""
+    if first not in ("v", "h"):
+        raise FigureError(f'elbow first={first!r}: use "v" (leave straight down or up) or "h" (leave sideways)')
+    if first == "v":
+        at = (y1 + y2) / 2 if at is None else at
+        corners = [(x1, y1), (x1, at), (x2, at), (x2, y2)]
+    else:
+        at = (x1 + x2) / 2 if at is None else at
+        corners = [(x1, y1), (at, y1), (at, y2), (x2, y2)]
+    points = [corners[0]]
+    for p in corners[1:]:
+        if p != points[-1]:
+            points.append(p)
+    if len(points) < 2:
+        raise FigureError(f"elbow from ({x1}, {y1}) to ({x2}, {y2}): the two ends are the same point")
+    return points
+
+
+def elbow_path(points, kind, pfx, both=False):
+    """An arrow along points, with a right-angle bend at each point between the first and the last."""
+    legs = [abs(bx - ax) + abs(by - ay) for (ax, ay), (bx, by) in zip(points, points[1:])]
+    ends = [("last", legs[-1])] + ([("first", legs[0])] if both else [])
+    for which, length in ends:
+        if length < ELBOW_END_LEG:
+            raise FigureError(f"elbow from {points[0]} to {points[-1]}: its {which} leg is {length:g} long, but an "
+                              f"arrowhead needs {ELBOW_END_LEG}: move the bend with at=")
+    d = " ".join(f"{'M' if i == 0 else 'L'}{round(x, 1):g} {round(y, 1):g}" for i, (x, y) in enumerate(points))
+    return f'<path class="a a-{kind}" d="{d}"{_heads(kind, pfx, both)}/>'
 
 
 def text(x, y, s, cls="t", anchor="start", halo=False):
@@ -131,7 +171,8 @@ class Canvas:
 
     Parts: zone (a machine or the store, a tinted panel with an uppercase title), box (a process, white with an ink edge,
     a bold title and plain lines), store (a file or folder, dashed, a mono name and two plain lines), pill (a person),
-    arrow (file, ring, say or loc) and label. Every part checks that its text fits.
+    arrow (file, ring, say or loc, straight across or straight down), elbow (the same kinds, with right-angle bends)
+    and label. Every part checks that its text fits.
     """
 
     def __init__(self, pfx, width=1000, height=800, label=""):
@@ -191,8 +232,22 @@ class Canvas:
         self.el.append(text(cx, y + 24, label, "tb", "middle"))
         return self
 
-    def arrow(self, x1, y1, x2, y2, kind, both=False):
+    def arrow(self, x1, y1, x2, y2, kind, both=False, diagonal=False):
+        """A straight arrow, the first choice: place the boxes so the two ends share an x or a y. Two points that share
+        neither make a diagonal, which reads as noise in a picture of rows and columns: the build refuses one unless
+        diagonal=True says it is meant. When the boxes cannot line up, elbow() draws the link with right-angle bends."""
+        if x1 != x2 and y1 != y2 and not diagonal:
+            raise FigureError(f"arrow from ({x1}, {y1}) to ({x2}, {y2}) is diagonal: move a box so the ends share an x "
+                              "or a y, or draw it with elbow(); pass diagonal=True only when the diagonal is meant")
         self.el.append(line(x1, y1, x2, y2, kind, self.pfx, both))
+        return self
+
+    def elbow(self, x1, y1, x2, y2, kind, first="v", at=None, both=False):
+        """An arrow with right-angle bends, for two points that share neither x nor y. first="v" (the default) leaves
+        straight down or up, runs across at y=at, then goes straight into the end: one row to the next. first="h"
+        leaves sideways, runs down or up at x=at, then goes sideways in: one column to the next. at is halfway unless
+        given; set it to the end's own y (or x) for a single bend. references/layout.md says where the bend goes."""
+        self.el.append(elbow_path(elbow_points(x1, y1, x2, y2, first, at), kind, self.pfx, both))
         return self
 
     def label(self, x, y, s, anchor="start", cls="t", halo=False):

@@ -163,6 +163,44 @@ class BoxHeightTest(unittest.TestCase):
             self.assertEqual(16, 10 + need - last, title)
 
 
+class ElbowTest(unittest.TestCase):
+    def path_d(self, svg):
+        return re.search(r'<path class="a a-file" d="([^"]+)"', svg).group(1)
+
+    def test_an_elbow_goes_down_across_halfway_then_down(self):
+        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file").svg()
+        self.assertEqual("M10 10 L10 55 L200 55 L200 100", self.path_d(svg))
+        self.assertIn('marker-end="url(#ah-file-e)"', svg)
+
+    def test_first_h_goes_sideways_then_down_then_sideways(self):
+        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", first="h").svg()
+        self.assertEqual("M10 10 L105 10 L105 100 L200 100", self.path_d(svg))
+
+    def test_at_an_ends_own_y_makes_one_bend(self):
+        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=100).svg()
+        self.assertEqual("M10 10 L10 100 L200 100", self.path_d(svg))
+
+    def test_an_arrowhead_needs_a_last_leg_of_16(self):
+        with self.assertRaisesRegex(figlib.FigureError, "last leg is 5 long, but an arrowhead needs 16"):
+            figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=95)
+        with self.assertRaisesRegex(figlib.FigureError, "first leg is 4 long"):
+            figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=14, both=True)
+
+    def test_a_diagonal_arrow_is_refused_unless_it_is_meant(self):
+        with self.assertRaisesRegex(figlib.FigureError, r"diagonal: move a box so the ends share an x or a y, or draw it with elbow\(\)"):
+            figlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file")
+        self.assertIn("<line", figlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file", diagonal=True).svg())
+
+    def test_an_elbow_figure_makes_a_valid_card_with_its_kind_in_the_legend(self):
+        draw = figlib.Canvas("e", 1000, 300, "An elbow.").elbow(100, 40, 600, 250, "ring", both=True).svg
+        figure = figlib.build(type("Spec", (), {"FIGURES": [{"stem": "e", "alt": "An elbow.", "svg": draw}]}),
+                              tempfile.mkdtemp())[0]
+        card = read(figure["files"]["light"])
+        xml.dom.minidom.parseString(card)
+        self.assertEqual(["ring"], figlib.used_kinds(figure["svg"]))
+        self.assertIn('class="lg-ring"', card)
+
+
 class ZoneTitleTest(unittest.TestCase):
     # Real widths, measured in rsvg-convert in the zone title style: Arial bold capitals, 13px, 0.1 em letter-spacing.
     MEASURED = {"MVP SHORTCUT": 118.1, "MOMENTUM": 87.1}

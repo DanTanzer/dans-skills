@@ -142,7 +142,7 @@ The first four numbers of `box` and `store` are x, y, width and height. A `box` 
 
 `box_height(title, lines)` returns the exact height a box needs for its text. The last line then sits 16 units above the bottom edge, about as far as the title's capitals sit below the top edge. A shorter box stops the build. The sample's boxes are 72 tall, the same as the files beside them. On their own, they would need 66.
 
-`arrow` takes a start point, an end point and a kind. `.label` writes a word at its own x and y. `"middle"` centres that word on its x. The sample also uses a `zone`, the tinted panel for a machine, here YOUR MAC. It also uses a `pill`, which is a person.
+`arrow` takes a start point, an end point and a kind. Claude places the boxes so the two points share an x or a y, and the arrow runs straight across or straight down. When two boxes cannot line up, `elbow` takes the same arguments and draws the link with right-angle bends. `arrow` refuses a diagonal unless the spec says it is meant. `.label` writes a word at its own x and y. `"middle"` centres that word on its x. The sample also uses a `zone`, the tinted panel for a machine, here YOUR MAC. It also uses a `pill`, which is a person.
 
 An arrow has one of four kinds:
 
@@ -307,6 +307,8 @@ The light file becomes `<stem>.png`, and the dark file becomes `<stem>-dark.png`
 
 If Claude finds one, Claude changes the spec and builds again. The width check catches most overflows in boxes and sequences. This look catches the rest, including every free label. A program box never has the fourth fault: the build refuses one shorter than its text needs.
 
+Claude also looks at each elbow. When shifting one box left or right would let the arrow run straight, Claude shifts the box: a straight line reads faster than a bent one.
+
 ### Step 7: the picture goes into a document
 
 With `--doc`, the PNGs are already next to the document, in its `-diagrams` folder. `render.py` prints the Markdown for each figure, and Claude pastes it into the document where the picture goes.
@@ -328,7 +330,7 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 | `scripts/render.py` | Python | One command: `where` finds a doc's runtime folder; a build writes the SVGs, draws each PNG with `rsvg-convert` and prints the Markdown |
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_figlib.py` | Python | 34 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a doc's folder gets only the pictures it shows, a theme change removes the other theme's pictures, and the Markdown fits one theme or both |
+| `scripts/tests/test_figlib.py` | Python | 40 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a doc's folder gets only the pictures it shows, a theme change removes the other theme's pictures, and the Markdown fits one theme or both |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new figure |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
 | `runtime/` | Made by `render.py`, ignored by git | One folder per doc, with its spec, SVGs and Mermaid files |
