@@ -14,29 +14,29 @@ The repository, its marketplace and its one plugin all share one name: `dans-ski
 A marketplace is a catalog of plugins. A plugin is what you install and turn on. A skill is one set of instructions that Claude follows. Here the marketplace lists one plugin, the repository itself, and that plugin carries every skill.
 
 ```text
-dans-skills/                         repository, marketplace and plugin "dans-skills"
-├── README.md                        for users: what the skills do, and how to install them
-├── CONTRIBUTING.md                  this page
-├── LICENSE                          MIT
-├── .gitignore                       keeps caches and local tool state out of git
+dans-skills/                             repository, marketplace and plugin "dans-skills"
+├── README.md                            for users: what the skills do, and how to install them
+├── CONTRIBUTING.md                      this page
+├── LICENSE                              MIT
+├── .gitignore                           keeps caches and local tool state out of git
 ├── .claude-plugin/
-│   ├── marketplace.json             marks the repository as a marketplace that lists itself
-│   └── plugin.json                  marks the repository as a plugin: name, author, repository
+│   ├── marketplace.json                 marks the repository as a marketplace that lists itself
+│   └── plugin.json                      marks the repository as a plugin: name, author, repository
 └── skills/
-    └── readable-diagrams/           skill "readable-diagrams"
-        ├── SKILL.md                 the instructions Claude reads when the skill runs
-        ├── HOW-IT-WORKS.md          for people: one build, step by step
-        ├── .gitignore               keeps what a build makes out of git, so a copied skill stays clean
+    └── readable-diagrams/               skill "readable-diagrams"
+        ├── SKILL.md                     the instructions Claude reads when the skill runs
+        ├── HOW-IT-WORKS.md              for people: one build, step by step
+        ├── .gitignore                   keeps Python caches out of git, so a copied skill stays clean
         ├── references/
-        │   └── layout.md            layout numbers, read only when needed
-        ├── sample/                  a small spec and the pictures it makes
-        └── scripts/                 the code the skill runs
-            ├── figlib.py            the drawing library: hand-laid-out SVG in one house style
-            ├── render.py            one command: builds a figure set, then draws the PNGs with rsvg-convert
-            ├── example_spec.py      a worked example with three figures; copy it to start a set
-            ├── doctor.sh            checks the Mac: Python, rsvg-convert and the fonts
+        │   └── layout.md                layout numbers, read only when needed
+        ├── sample/                      a small spec and the pictures it makes
+        └── scripts/                     the code the skill runs
+            ├── diagramlib.py            the drawing library: hand-laid-out SVG in one house style
+            ├── render.py                one command: builds a spec, draws its PNGs with rsvg-convert, prints the Markdown
+            ├── example_spec.py          a worked example with three diagrams; copy it to start a set
+            ├── doctor.sh                checks the Mac: Python, rsvg-convert and the fonts
             └── tests/
-                └── test_figlib.py   checks the example and the sample build, and the text checks refuse what they should
+                └── test_diagramlib.py   checks the example and the sample build, and the text checks refuse what they should
 ```
 
 The `.gitignore` at the top keeps Python caches and local tool folders out of git. Each skill also keeps its own `.gitignore`, so a skill folder copied on its own stays clean. A new skill is a new folder under `skills/`, with its own `SKILL.md` and its own `.gitignore`.

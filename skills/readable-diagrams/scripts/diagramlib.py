@@ -1,9 +1,9 @@
-"""figlib: hand-laid-out SVG figures in one house style, for data flow and sequence pictures.
+"""diagramlib: hand-laid-out SVG diagrams in one house style, for data flow and sequence pictures.
 
-A figure is Python that places every box and arrow (a data flow) or a list of rows (a sequence). The library turns it
-into one self-contained SVG per theme, light and dark: the figure on its card, under the legend entries for the arrow
+A diagram is Python that places every box and arrow (a data flow) or a list of rows (a sequence). The library turns it
+into one self-contained SVG per theme, light and dark: the diagram on its card, under the legend entries for the arrow
 kinds it uses, with the house style inside the file. Any SVG reader draws such a file the same way, and render.py
-turns each one into a PNG with rsvg-convert. figlib also writes the Mermaid fallback text.
+turns each one into a PNG with rsvg-convert. diagramlib also writes the Mermaid fallback text.
 
 Why hand layout and not Mermaid: Mermaid places every box itself, so lines can cross and labels sit on top of
 the lines, and it has no legend. A picture that people read again and again is worth placing by hand.
@@ -42,8 +42,8 @@ def arial_width(s, size=14):
     return round(sum(ARIAL_ADVANCE.get(ch, 1229) for ch in s) * size / 2048, 1)
 
 
-class FigureError(Exception):
-    """A label does not fit, or a figure is malformed. The text names the label."""
+class DiagramError(Exception):
+    """A label does not fit, or a diagram is malformed. The text names the label."""
 
 
 def width_of(s, cls="t"):
@@ -67,7 +67,7 @@ def width_of(s, cls="t"):
 def must_fit(s, room, cls="t", where=""):
     need = width_of(s, cls)
     if need > room:
-        raise FigureError(f"{where or 'label'} {s!r} needs {need:.0f}px but has {room:.0f}px: shorten it or widen the box")
+        raise DiagramError(f"{where or 'label'} {s!r} needs {need:.0f}px but has {room:.0f}px: shorten it or widen the box")
 
 
 # ====================================================================================== SVG helpers
@@ -87,11 +87,51 @@ def svg_open(width, height, pfx, label):
     return f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{esc(label)}"><defs>{markers}</defs>'
 
 
-def line(x1, y1, x2, y2, kind, pfx, both=False):
+def _heads(kind, pfx, both):
     if kind not in ARROW_KINDS:
-        raise FigureError(f"unknown arrow kind {kind!r}; use one of {ARROW_KINDS}")
+        raise DiagramError(f"unknown arrow kind {kind!r}; use one of {ARROW_KINDS}")
     start = f' marker-start="url(#ah-{kind}-{pfx})"' if both else ""
-    return f'<line class="a a-{kind}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" marker-end="url(#ah-{kind}-{pfx})"{start}/>'
+    return f' marker-end="url(#ah-{kind}-{pfx})"{start}'
+
+
+def line(x1, y1, x2, y2, kind, pfx, both=False):
+    return f'<line class="a a-{kind}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"{_heads(kind, pfx, both)}/>'
+
+
+ELBOW_END_LEG = 16  # an arrowhead is about 11 units long; the leg it sits on needs room for it and a little line
+
+
+def elbow_points(x1, y1, x2, y2, first="v", at=None):
+    """The corners of an elbow from (x1, y1) to (x2, y2). first="v": straight down or up, across at y=at, then straight
+    into the end. first="h": sideways, down or up at x=at, then sideways in. at is halfway unless given; at equal to
+    an end's own y (or x) leaves a single bend, an L. Legs of no length are dropped."""
+    if first not in ("v", "h"):
+        raise DiagramError(f'elbow first={first!r}: use "v" (leave straight down or up) or "h" (leave sideways)')
+    if first == "v":
+        at = (y1 + y2) / 2 if at is None else at
+        corners = [(x1, y1), (x1, at), (x2, at), (x2, y2)]
+    else:
+        at = (x1 + x2) / 2 if at is None else at
+        corners = [(x1, y1), (at, y1), (at, y2), (x2, y2)]
+    points = [corners[0]]
+    for p in corners[1:]:
+        if p != points[-1]:
+            points.append(p)
+    if len(points) < 2:
+        raise DiagramError(f"elbow from ({x1}, {y1}) to ({x2}, {y2}): the two ends are the same point")
+    return points
+
+
+def elbow_path(points, kind, pfx, both=False):
+    """An arrow along points, with a right-angle bend at each point between the first and the last."""
+    legs = [abs(bx - ax) + abs(by - ay) for (ax, ay), (bx, by) in zip(points, points[1:])]
+    ends = [("last", legs[-1])] + ([("first", legs[0])] if both else [])
+    for which, length in ends:
+        if length < ELBOW_END_LEG:
+            raise DiagramError(f"elbow from {points[0]} to {points[-1]}: its {which} leg is {length:g} long, but an "
+                              f"arrowhead needs {ELBOW_END_LEG}: move the bend with at=")
+    d = " ".join(f"{'M' if i == 0 else 'L'}{round(x, 1):g} {round(y, 1):g}" for i, (x, y) in enumerate(points))
+    return f'<path class="a a-{kind}" d="{d}"{_heads(kind, pfx, both)}/>'
 
 
 def text(x, y, s, cls="t", anchor="start", halo=False):
@@ -131,7 +171,8 @@ class Canvas:
 
     Parts: zone (a machine or the store, a tinted panel with an uppercase title), box (a process, white with an ink edge,
     a bold title and plain lines), store (a file or folder, dashed, a mono name and two plain lines), pill (a person),
-    arrow (file, ring, say or loc) and label. Every part checks that its text fits.
+    arrow (file, ring, say or loc, straight across or straight down), elbow (the same kinds, with right-angle bends)
+    and label. Every part checks that its text fits.
     """
 
     def __init__(self, pfx, width=1000, height=800, label=""):
@@ -157,7 +198,7 @@ class Canvas:
         box_height(title, lines, muted_last) gives the exact h the text needs; a shorter box is refused."""
         need = box_height(title, lines, muted_last)
         if h < need:
-            raise FigureError(f"box {title!r} is {h}px tall but its text needs {need}px: box_height() gives the height")
+            raise DiagramError(f"box {title!r} is {h}px tall but its text needs {need}px: box_height() gives the height")
         self.el.append(f'<rect class="box" x="{x}" y="{y}" width="{w}" height="{h}" rx="10"/>')
         for dy, s, cls, where in _box_rows(title, lines, muted_last):
             must_fit(s, w - 32, cls, where)
@@ -191,8 +232,22 @@ class Canvas:
         self.el.append(text(cx, y + 24, label, "tb", "middle"))
         return self
 
-    def arrow(self, x1, y1, x2, y2, kind, both=False):
+    def arrow(self, x1, y1, x2, y2, kind, both=False, diagonal=False):
+        """A straight arrow, the first choice: place the boxes so the two ends share an x or a y. Two points that share
+        neither make a diagonal, which reads as noise in a picture of rows and columns: the build refuses one unless
+        diagonal=True says it is meant. When the boxes cannot line up, elbow() draws the link with right-angle bends."""
+        if x1 != x2 and y1 != y2 and not diagonal:
+            raise DiagramError(f"arrow from ({x1}, {y1}) to ({x2}, {y2}) is diagonal: move a box so the ends share an x "
+                              "or a y, or draw it with elbow(); pass diagonal=True only when the diagonal is meant")
         self.el.append(line(x1, y1, x2, y2, kind, self.pfx, both))
+        return self
+
+    def elbow(self, x1, y1, x2, y2, kind, first="v", at=None, both=False):
+        """An arrow with right-angle bends, for two points that share neither x nor y. first="v" (the default) leaves
+        straight down or up, runs across at y=at, then goes straight into the end: one row to the next. first="h"
+        leaves sideways, runs down or up at x=at, then goes sideways in: one column to the next. at is halfway unless
+        given; set it to the end's own y (or x) for a single bend. references/layout.md says where the bend goes."""
+        self.el.append(elbow_path(elbow_points(x1, y1, x2, y2, first, at), kind, self.pfx, both))
         return self
 
     def label(self, x, y, s, anchor="start", cls="t", halo=False):
@@ -211,7 +266,7 @@ class Canvas:
 def _lifeline_x(n, width):
     """Evenly spread lifelines: the first near the left edge (the person is narrow), the rest sharing the width."""
     if n < 2:
-        raise FigureError("a sequence needs at least two lifelines")
+        raise DiagramError("a sequence needs at least two lifelines")
     left, right = 60, width - 90
     step = (right - left) / (n - 1)
     return [round(left + i * step) for i in range(n)]
@@ -235,7 +290,7 @@ def render_sequence(seq, width=1000):
         if row[0] == "msg":
             _, src, dst, label, kind = row
             if src == dst:
-                raise FigureError(f"a message from {src} to itself cannot be drawn: {label!r}; use a note")
+                raise DiagramError(f"a message from {src} to itself cannot be drawn: {label!r}; use a note")
             x1, x2 = xs[src], xs[dst]
             must_fit(label, abs(x2 - x1) - 14, "t", f"message {src}->{dst}")
             direction = 1 if x2 > x1 else -1
@@ -246,7 +301,7 @@ def render_sequence(seq, width=1000):
         elif row[0] == "note":
             _, at, lines = row
             if len(lines) != 2:
-                raise FigureError(f"a note holds exactly two lines, got {lines!r}")
+                raise DiagramError(f"a note holds exactly two lines, got {lines!r}")
             for s in lines:
                 must_fit(s, note_w - 16, "t", "note")
             x = min(max(xs[at], note_w // 2 + 8), width - note_w // 2 - 8)
@@ -255,7 +310,7 @@ def render_sequence(seq, width=1000):
             body.append(text(x, cur + 45, lines[1], "t", "middle"))
             cur += 66
         else:
-            raise FigureError(f"unknown row {row!r}")
+            raise DiagramError(f"unknown row {row!r}")
     height = cur + 10
     el = [svg_open(width, height, pfx, f"{seq['title']}. {seq['caption']}")]
     for k in keys:
@@ -288,7 +343,7 @@ def mermaid_sequence(seq):
         if row[0] == "msg":
             _, src, dst, label, kind = row
             if ";" in label or "#" in label:
-                raise FigureError(f"Mermaid reads ; and # as syntax: rewrite {label!r}")
+                raise DiagramError(f"Mermaid reads ; and # as syntax: rewrite {label!r}")
             lines.append(f"  {src}{'-->>' if kind in ('ring', 'loc') else '->>'}{dst}: {label}")
         else:
             _, at, texts = row
@@ -338,17 +393,17 @@ def theme_css(theme):
     return re.sub(r"var\((--[a-z-]+)\)", lambda m: tokens[m.group(1)], STYLE)
 
 
-# ====================================================================================== the card: legend and figure
-# The four arrow meanings. A figure's legend shows only the kinds it uses.
+# ====================================================================================== the card: legend and diagram
+# The four arrow meanings. A diagram's legend shows only the kinds it uses.
 LEGEND_TEXT = {"file": "a file written or read", "ring": "a ring (a nudge only)", "say": "a person's words, or Claude's report", "loc": "kept on one machine only"}
 
 CARD_W = 920       # units; the PNG is twice this, 1840 pixels
-FIGURE_W = 898     # the figure inside the card: a 1-unit edge, then 10 on each side
+DIAGRAM_W = 898     # the diagram inside the card: a 1-unit edge, then 10 on each side
 LEGEND_ROW = 22.4  # one legend row; rows are 6 apart, and the entries in a row 18 apart
 
 
 def used_kinds(svg):
-    """The arrow kinds a figure draws, in legend order."""
+    """The arrow kinds a diagram draws, in legend order."""
     return [k for k in ARROW_KINDS if re.search(rf'class="[^"]*\ba-{k}\b', svg)]
 
 
@@ -368,42 +423,56 @@ def legend_svg(kinds, texts, top=15):
 
 
 def _placed(svg, x, y, width):
-    """The figure's own svg element, placed at x, y and drawn width wide. Its viewBox keeps its units, so every
-    coordinate in the figure stays as the spec wrote it. A size or place the element already had gives way to these.
+    """The diagram's own svg element, placed at x, y and drawn width wide. Its viewBox keeps its units, so every
+    coordinate in the diagram stays as the spec wrote it. A size or place the element already had gives way to these.
     Returns the element and its drawn height."""
     svg = svg.strip()
     head = re.match(r"<svg\b[^>]*>", svg)
     box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', head.group(0)) if head else None
     if not box:
-        raise FigureError('a figure must start with <svg viewBox="0 0 WIDTH HEIGHT">')
+        raise DiagramError('a diagram must start with <svg viewBox="0 0 WIDTH HEIGHT">')
     height = round(float(box.group(2)) * width / float(box.group(1)), 2)
     rest = re.sub(r'\s(?:x|y|width|height)="[^"]*"', "", head.group(0))[len("<svg"):]
     return f'<svg x="{x}" y="{y}" width="{width}" height="{height}"{rest}' + svg[head.end():], height
 
 
 def card(svg, theme, legend_texts=None, label=""):
-    """One figure as a self-contained SVG in one theme: its own style sheet, the card behind everything, the legend
-    entries for the arrow kinds the figure uses, then the figure. 920 units wide, so rsvg-convert --zoom 2 gives
+    """One diagram as a self-contained SVG in one theme: its own style sheet, the card behind everything, the legend
+    entries for the arrow kinds the diagram uses, then the diagram. 920 units wide, so rsvg-convert --zoom 2 gives
     1840 pixels. Outside the card's rounded corners the picture is transparent."""
     if theme not in THEMES:
-        raise FigureError(f"theme {theme!r}: use one of {tuple(THEMES)}")
+        raise DiagramError(f"theme {theme!r}: use one of {tuple(THEMES)}")
     kinds = used_kinds(svg)
     legend, legend_end = legend_svg(kinds, legend_texts or LEGEND_TEXT) if kinds else ("", 5)
-    figure, figure_h = _placed(svg, 11, round(legend_end + 6, 1), FIGURE_W)
-    height = math.ceil(legend_end + 6 + figure_h + 10 + 1)
+    diagram, diagram_h = _placed(svg, 11, round(legend_end + 6, 1), DIAGRAM_W)
+    height = math.ceil(legend_end + 6 + diagram_h + 10 + 1)
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_W}" height="{height}" viewBox="0 0 {CARD_W} {height}"'
             f' role="img" aria-label="{esc(label)}"><style>{theme_css(theme)}</style>'
             f'<rect class="card" x="0.5" y="0.5" width="{CARD_W - 1}" height="{height - 1}" rx="9.5"/>'
-            f"{legend}{figure}</svg>\n")
+            f"{legend}{diagram}</svg>\n")
 
 
 # ====================================================================================== embedding in Markdown
-def picture_block(stem, alt, mermaid=None, folder="figures"):
-    """The Markdown that shows a figure: the dark PNG in dark mode, the light one otherwise, then the Mermaid text closed."""
+THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, and the PNGs made from them
+BOTH = ("light", "dark")
+
+
+def check_alt(alt):
     if re.search(r'["\n]', alt):
-        raise FigureError("alt text may not hold a quote or a line break")
-    out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.png">\n'
-           f'  <img src="{folder}/{stem}.png" alt="{alt}">\n</picture>\n')
+        raise DiagramError(f"alt text may not hold a quote or a line break: {alt[:60]!r}")
+
+
+def picture_block(stem, alt, folder, mermaid=None, themes=BOTH):
+    """The Markdown that shows a diagram, then its Mermaid text in a closed block. With both themes, a <picture> that
+    shows the dark PNG in dark mode and the light one otherwise. With one theme, a plain Markdown image of its PNG."""
+    check_alt(alt)
+    if set(themes) == set(BOTH):
+        out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.png">\n'
+               f'  <img src="{folder}/{stem}.png" alt="{alt}">\n</picture>\n')
+    else:
+        (theme,) = themes
+        shown = alt.replace("[", "\\[").replace("]", "\\]")
+        out = f"![{shown}]({folder}/{stem}{THEME_SUFFIX[theme]}.png)\n"
     if mermaid:
         out += ("\n<details>\n<summary>The same diagram as Mermaid text (open it to edit)</summary>\n\n"
                 f"```mermaid\n{mermaid}\n```\n\n</details>\n")
@@ -411,33 +480,32 @@ def picture_block(stem, alt, mermaid=None, folder="figures"):
 
 
 # ====================================================================================== building from a spec
-THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, like the PNGs made from them
-
-
-def build(spec, out_dir):
-    """spec: a module or object with FIGURES, a list of dicts, each with stem, alt and either svg (a string or a
+def build(spec, out_dir, themes=BOTH):
+    """spec: a module or object with DIAGRAMS, a list of dicts, each with stem, alt and either svg (a string or a
     callable) or seq (a sequence dict, drawn and also written as Mermaid). Optional: mermaid, and LEGEND on the spec,
     new words for any of the four arrow meanings.
-    Writes out_dir/<stem>.svg and out_dir/<stem>-dark.svg, each complete on its own, and <stem>.mmd where there is
-    Mermaid. Returns the figure list; each entry's "files" maps light and dark to its SVG file."""
+    Writes out_dir/<stem>.svg for light and out_dir/<stem>-dark.svg for dark, for each theme in themes, each complete
+    on its own, and <stem>.mmd where there is Mermaid. Returns the diagram list; each entry's "files" maps each theme
+    built to its SVG file."""
     os.makedirs(out_dir, exist_ok=True)
     legend_texts = {**LEGEND_TEXT, **(getattr(spec, "LEGEND", None) or {})}
-    figures = []
-    for f in spec.FIGURES:
+    diagrams = []
+    for f in spec.DIAGRAMS:
         stem = f["stem"]
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", stem):
-            raise FigureError(f"stem {stem!r}: use lower-case letters, digits and hyphens")
+            raise DiagramError(f"stem {stem!r}: use lower-case letters, digits and hyphens")
+        check_alt(f["alt"])
         if "seq" in f:
             svg, mermaid = render_sequence(f["seq"]), mermaid_sequence(f["seq"])
         else:
             svg, mermaid = f["svg"]() if callable(f["svg"]) else f["svg"], f.get("mermaid", "")
         files = {}
-        for theme, suffix in THEME_SUFFIX.items():
-            files[theme] = os.path.join(out_dir, f"{stem}{suffix}.svg")
+        for theme in themes:
+            files[theme] = os.path.join(out_dir, f"{stem}{THEME_SUFFIX[theme]}.svg")
             with open(files[theme], "w", encoding="utf-8") as handle:
                 handle.write(card(svg, theme, legend_texts, f["alt"]))
         if mermaid:
             with open(os.path.join(out_dir, f"{stem}.mmd"), "w", encoding="utf-8") as handle:
                 handle.write(mermaid + "\n")
-        figures.append({"stem": stem, "alt": f["alt"], "svg": svg, "mermaid": mermaid, "files": files})
-    return figures
+        diagrams.append({"stem": stem, "alt": f["alt"], "svg": svg, "mermaid": mermaid, "files": files})
+    return diagrams

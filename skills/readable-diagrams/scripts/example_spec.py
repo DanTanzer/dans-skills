@@ -1,13 +1,15 @@
-"""A worked example: three figures of a small notes sync. Copy this file to start a new set.
+"""A worked example: three diagrams of a small notes sync. To start a new set, copy this file into the doc's runtime
+folder as spec.py (SKILL.md, step 2). To build this example on its own, from your project's folder, with SKILL as
+this skill's folder:
 
-    python3 -I render.py example_spec.py out
+    python3 -I SKILL/scripts/render.py SKILL/scripts/example_spec.py --out .readable-diagrams/example
 
-A spec defines FIGURES: a list of dicts with stem (the PNG name), alt (one sentence a screen reader gets, no quotes)
+A spec defines DIAGRAMS: a list of dicts with stem (the PNG name), alt (one sentence a screen reader gets, no quotes)
 and either svg (a callable that returns SVG, for a data flow drawn on a Canvas) or seq (a sequence dict).
 LEGEND, optional, renames any of the four arrow meanings for this set. box_height gives a box the exact height
 its text needs.
 """
-from figlib import Canvas, box_height
+from diagramlib import Canvas, box_height
 
 # ====================================================================================== the data flow
 # One panel per machine across the top, the store across the bottom, a ring bus above the machines. Fixed y positions
@@ -128,7 +130,7 @@ BROADCAST = {
     ],
 }
 
-FIGURES = [
+DIAGRAMS = [
     {"stem": "sync-data-flow", "alt": DFD_ALT, "svg": sync_data_flow},
     {"stem": "sync-sequence-1-ask-and-answer", "alt": f"{ASK['title']}. {ASK['caption']}", "seq": ASK},
     {"stem": "sync-sequence-2-broadcast", "alt": f"{BROADCAST['title']}. {BROADCAST['caption']}", "seq": BROADCAST},
