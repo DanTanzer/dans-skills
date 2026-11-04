@@ -4,8 +4,9 @@
     python3 -I render.py SPEC.py --doc DOC.md --theme light|dark|both [--no-png]
     python3 -I render.py SPEC.py --out DIR [--theme light|dark|both] [--no-png]
 
-where prints DOC.md's runtime folder, and makes it. Runtime folders live in this skill's runtime/ folder, which git
-ignores. DOC.md's spec goes in its runtime folder, as spec.py.
+where prints DOC.md's runtime folder, and makes it: .readable-diagrams/ at the root of DOC.md's git project, then
+DOC.md's own path, such as .readable-diagrams/docs/design.md/. DOC.md's spec goes there, as spec.py. The first time,
+.readable-diagrams/ gets a .gitignore that ignores everything in the folder, itself included.
 
 With --doc, every build file goes in DOC.md's runtime folder: an SVG per figure and theme, and a .mmd where there is
 Mermaid. rsvg-convert draws only the PNGs that DOC.md shows, into <doc name>-diagrams/ next to DOC.md. Then the
@@ -16,7 +17,6 @@ With --out instead, everything goes in DIR, in both themes unless --theme says o
 SVGs, for a quick check. Exit 1 with a plain message when a label does not fit or the export fails, 2 for a usage
 mistake.
 """
-import hashlib
 import importlib.util
 import os
 import re
@@ -26,7 +26,8 @@ import sys
 sys.dont_write_bytecode = True  # loading a spec leaves no __pycache__ folder beside it, or beside figlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUNTIME = os.path.join(os.path.dirname(HERE), "runtime")
+RUNTIME_NAME = ".readable-diagrams"
+IGNORE_EVERYTHING = "# The readable-diagrams skill makes everything in this folder. None of it belongs in git.\n*\n"
 sys.path.insert(0, HERE)
 import figlib  # noqa: E402
 
@@ -40,11 +41,28 @@ def doc_name(doc):
     return name or "doc"
 
 
+def has_folder(doc):
+    return os.path.isdir(os.path.dirname(os.path.abspath(doc)))
+
+
+def project_root(doc):
+    """The root of the git project that holds the doc: the nearest folder at or above the doc's that holds .git, a
+    folder in a clone and a file in a worktree. A doc outside git gets its own folder."""
+    here = os.path.dirname(os.path.abspath(doc))
+    folder = here
+    while not os.path.exists(os.path.join(folder, ".git")):
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return here
+        folder = parent
+    return folder
+
+
 def runtime_folder(doc):
-    """The doc's own folder in runtime/: its name, then 8 characters of a hash of its full path, so two docs with the
-    same name in different folders never share a spec."""
-    digest = hashlib.sha1(os.path.realpath(doc).encode("utf-8")).hexdigest()[:8]
-    return os.path.join(RUNTIME, f"{doc_name(doc)}-{digest}")
+    """The doc's own folder for build files: .readable-diagrams/ at the project root, then the doc's path from there.
+    docs/design.md builds in .readable-diagrams/docs/design.md/, so two docs never share a spec."""
+    root = project_root(doc)
+    return os.path.join(root, RUNTIME_NAME, os.path.relpath(os.path.abspath(doc), root))
 
 
 def diagrams_folder(doc):
@@ -53,15 +71,15 @@ def diagrams_folder(doc):
 
 
 def make_folder(path):
-    """Make path. Inside runtime/, also make sure runtime/ ignores itself, so it stays out of git even when this
-    skill's own .gitignore was not copied with the skill."""
+    """Make path. Inside a .readable-diagrams folder, also give that folder a .gitignore that ignores everything in it,
+    itself included, so the build files stay out of git and the project's own .gitignore stays as it is."""
     os.makedirs(path, exist_ok=True)
-    runtime = os.path.realpath(RUNTIME)
-    if os.path.commonpath([os.path.realpath(path), runtime]) == runtime:
-        ignore = os.path.join(RUNTIME, ".gitignore")
+    parts = os.path.abspath(path).split(os.sep)
+    if RUNTIME_NAME in parts:
+        ignore = os.path.join(os.sep.join(parts[:parts.index(RUNTIME_NAME) + 1]), ".gitignore")
         if not os.path.exists(ignore):
             with open(ignore, "w", encoding="utf-8") as handle:
-                handle.write("# render.py makes everything in this folder. None of it belongs in git.\n*\n")
+                handle.write(IGNORE_EVERYTHING)
 
 
 def rasterize(svg, png):
@@ -124,7 +142,7 @@ def parse(args):
                       "Ask the user once, then run this again with the answer.")
     if not opts["doc"] and not opts["out"]:
         return None, "say where the files go: --doc DOC.md, or --out DIR"
-    if opts["doc"] and not os.path.isdir(os.path.dirname(os.path.abspath(opts["doc"]))):
+    if opts["doc"] and not has_folder(opts["doc"]):
         return None, f"there is no folder for {opts['doc']}"
     return opts, None
 
@@ -133,6 +151,9 @@ def where(args):
     """render.py where DOC.md: print DOC.md's runtime folder, and make it."""
     if len(args) != 1:
         print("usage: render.py where DOC.md")
+        return 2
+    if not has_folder(args[0]):
+        print(f"render.py: there is no folder for {args[0]}")
         return 2
     folder = runtime_folder(args[0])
     try:

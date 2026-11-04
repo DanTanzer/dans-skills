@@ -1,6 +1,7 @@
 """figlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
 height their text needs, the doctor names rsvg-convert, a doc gets only the pictures it shows while every build file
-stays in its runtime folder, and the Markdown block has the right shape for one theme or both."""
+stays in .readable-diagrams/ at the project root, which git ignores, and the Markdown block has the right shape for
+one theme or both."""
 import contextlib
 import io
 import os
@@ -25,6 +26,11 @@ SAMPLE = os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py")
 def read(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+def write(path, text):
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def read_bytes(path):
@@ -237,18 +243,17 @@ class ThemeChoiceTest(unittest.TestCase):
 
 
 class DocFolderTest(unittest.TestCase):
-    """A doc's folder gets the pictures the doc shows and nothing else. Every build file stays in runtime/."""
+    """A doc's folder gets the pictures the doc shows and nothing else. Every build file stays in .readable-diagrams/ at
+    the root of the doc's git project, which ignores everything in it."""
 
     def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        runtime = mock.patch.object(render, "RUNTIME", os.path.join(self.tmp, "skill", "runtime"))
-        runtime.start()
-        self.addCleanup(runtime.stop)
-        self.docs = os.path.join(self.tmp, "docs")
+        self.project = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.project, ".git"))
+        self.build = os.path.join(self.project, ".readable-diagrams")
+        self.docs = os.path.join(self.project, "docs")
         os.makedirs(self.docs)
         self.doc = os.path.join(self.docs, "Design Notes.md")
-        with open(self.doc, "w", encoding="utf-8") as handle:
-            handle.write("# Design notes\n")
+        write(self.doc, "# Design notes\n")
         self.pictures = os.path.join(self.docs, "Design-Notes-diagrams")
 
     def run_render(self, *args):
@@ -256,27 +261,59 @@ class DocFolderTest(unittest.TestCase):
             code = render.main(["render.py", *args])
         return code, said.getvalue()
 
-    def spec_in_runtime(self):
-        code, said = self.run_render("where", self.doc)
+    def spec_in_runtime(self, doc=None):
+        code, said = self.run_render("where", doc or self.doc)
         self.assertEqual(0, code, said)
         spec = os.path.join(said.strip(), "spec.py")
         shutil.copy(SAMPLE, spec)
         return spec
 
-    def test_where_names_one_folder_in_runtime_per_doc(self):
+    def test_where_makes_the_docs_folder_in_readable_diagrams_at_the_project_root(self):
         code, said = self.run_render("where", self.doc)
         folder = said.strip()
         self.assertEqual(0, code)
+        self.assertEqual(os.path.join(self.build, "docs", "Design Notes.md"), folder)
         self.assertTrue(os.path.isdir(folder))
-        self.assertEqual(render.RUNTIME, os.path.dirname(folder))
-        self.assertRegex(os.path.basename(folder), r"^Design-Notes-[0-9a-f]{8}$")
         self.assertEqual(folder, self.run_render("where", self.doc)[1].strip())
-        self.assertNotEqual(folder, render.runtime_folder(os.path.join(self.tmp, "elsewhere", "Design Notes.md")))
+        other = os.path.join(self.project, "specs", "Design Notes.md")
+        self.assertEqual(os.path.join(self.build, "specs", "Design Notes.md"), render.runtime_folder(other))
 
-    def test_runtime_stays_out_of_git(self):
+    def test_the_project_root_is_the_nearest_folder_with_git(self):
+        worktree = os.path.join(self.project, "worktrees", "branch")
+        os.makedirs(os.path.join(worktree, "docs"))
+        write(os.path.join(worktree, ".git"), "gitdir: elsewhere\n")
+        self.assertEqual(worktree, render.project_root(os.path.join(worktree, "docs", "a.md")))
+        self.assertEqual(self.project, render.project_root(self.doc))
+        loose = tempfile.mkdtemp()
+        self.assertEqual(os.path.join(loose, ".readable-diagrams", "a.md"), render.runtime_folder(os.path.join(loose, "a.md")))
+
+    def test_readable_diagrams_ignores_everything_in_it(self):
         self.spec_in_runtime()
-        self.assertEqual("*", read(os.path.join(render.RUNTIME, ".gitignore")).splitlines()[-1])
-        self.assertIn("runtime/", read(os.path.join(os.path.dirname(SCRIPTS), ".gitignore")).splitlines())
+        self.assertEqual("*", read(os.path.join(self.build, ".gitignore")).splitlines()[-1])
+        self.assertEqual([".git", ".readable-diagrams", "docs"], sorted(os.listdir(self.project)))
+        self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
+
+    @unittest.skipUnless(shutil.which("git"), "needs git")
+    def test_git_sees_the_doc_and_its_pictures_and_nothing_else(self):
+        project = tempfile.mkdtemp()
+        git = ["git", "-c", f"core.excludesFile={os.devnull}"]
+        subprocess.run(git + ["init", "-q"], cwd=project, check=True, capture_output=True)
+        doc = os.path.join(project, "docs", "design.md")
+        os.makedirs(os.path.dirname(doc))
+        write(doc, "# Design\n")
+        code, said = self.run_render(self.spec_in_runtime(doc), "--doc", doc, "--theme", "light")
+        self.assertEqual(0, code, said)
+        status = subprocess.run(git + ["status", "--porcelain", "--untracked-files=all"], cwd=project, check=True,
+                                capture_output=True, text=True).stdout
+        self.assertEqual(["?? docs/design-diagrams/build-sequence.png", "?? docs/design-diagrams/data-flow.png",
+                          "?? docs/design.md"], sorted(status.splitlines()))
+        self.assertTrue(os.path.isfile(os.path.join(project, ".readable-diagrams", "docs", "design.md", "data-flow.svg")))
+
+    def test_where_refuses_a_doc_in_a_folder_that_is_not_there(self):
+        code, said = self.run_render("where", os.path.join(self.project, "typo", "a.md"))
+        self.assertEqual(2, code)
+        self.assertIn("there is no folder for", said)
+        self.assertFalse(os.path.exists(self.build))
 
     def test_the_doc_folder_gets_its_pictures_and_nothing_else(self):
         spec = self.spec_in_runtime()
@@ -381,6 +418,14 @@ class RenderPathsTest(unittest.TestCase):
                 self.assertEqual(1840, png_size(os.path.join(out, name))[0], name)
             light, dark = (read_bytes(os.path.join(out, n)) for n in ("data-flow.png", "data-flow-dark.png"))
         self.assertNotEqual(light, dark)
+
+    def test_an_out_folder_inside_readable_diagrams_gets_the_gitignore_and_others_do_not(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            sample = os.path.join(tmp, ".readable-diagrams", "sample")
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", sample, "--no-png"]))
+            self.assertEqual("*", read(os.path.join(tmp, ".readable-diagrams", ".gitignore")).splitlines()[-1])
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", os.path.join(tmp, "out"), "--no-png"]))
+            self.assertFalse(os.path.exists(os.path.join(tmp, "out", ".gitignore")))
 
     def test_loading_a_spec_leaves_no_python_cache_beside_it(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,26 +19,26 @@ Do not use it for charts of numbers (that is a chart, not a figure), for one-off
 
 1. The PNGs the doc shows, in a folder next to the doc and named after it: `design-diagrams/` for `design.md`. `<stem>.png` is light and `<stem>-dark.png` is dark; the doc gets one or both, as the user chose. Each is 1840 pixels wide (a 920 pixel card at 2x), with the arrow legend inside the picture.
 2. In the doc, the Markdown that `render.py` prints for each figure. With both themes, a `<picture>` block that shows the dark PNG in dark mode; with one theme, a plain Markdown image. Then a closed `<details>` block with the same diagram as Mermaid text, so GitHub readers can edit it.
-3. Nothing else next to the doc. The spec, the SVGs and the Mermaid files stay in the doc's runtime folder, inside this skill's `runtime/` folder, which git ignores.
+3. Nothing else next to the doc. The spec, the SVGs and the Mermaid files stay in the doc's runtime folder, inside `.readable-diagrams/` at the root of the project. That folder holds its own `.gitignore`, which ignores everything in it, so the project's `.gitignore` needs no change. It sits in the project, not in this skill's folder, because the project is where Claude may write without asking.
 
 ## How to make one
 
-Below, `scripts/`, `sample/` and `runtime/` are in this skill's folder, and DOC.md is the user's document. Read `scripts/example_spec.py` first: it holds three figures of a small notes sync, and it is the template for a new set.
+Below, `scripts/` and `sample/` are in this skill's folder, and DOC.md is the user's document. Read `scripts/example_spec.py` first: it holds three figures of a small notes sync, and it is the template for a new set.
 
 1. **Ask once: light, dark or both.** Unless the user already said, ask which pictures the doc should show: light, dark, or both. With both, readers in dark mode see the dark picture, on GitHub and in most Markdown viewers. The answer is `--theme` below; the build refuses `--doc` without it.
-2. **Find the doc's runtime folder.** `python3 -I scripts/render.py where DOC.md` prints it, and makes it. Write the spec there as `spec.py`, starting from a copy of `example_spec.py`. If a `spec.py` is already there, it drew this doc's pictures before: change it rather than starting over.
+2. **Find the doc's runtime folder.** `python3 -I scripts/render.py where DOC.md` prints it, and makes it: `.readable-diagrams/` at the root of the doc's git project, then the doc's path, such as `.readable-diagrams/docs/design.md/`. Write the spec there as `spec.py`, starting from a copy of `example_spec.py`. If a `spec.py` is already there, it drew this doc's pictures before: change it rather than starting over.
 3. **Write the spec.** A spec defines `FIGURES`, each with a `stem`, an `alt` sentence and either `svg` (a function that draws on a `Canvas`) or `seq` (a sequence dict). Decide the stems from the document's section names: `data-flow`, `sequence-1-set-up`, `sequence-2-open`. Give each box the height `figlib.box_height(title, lines)` returns: the exact height its text needs. A shorter box stops the build; boxes side by side can share the tallest.
 4. **Build without pictures first.** `python3 -I scripts/render.py RUNTIME/spec.py --doc DOC.md --theme THEME --no-png`, with the folder from step 2 as RUNTIME. Text in boxes, stores, pills, zone titles and sequences is width-checked at build time, so text that would overflow stops the build with the text named. Free labels placed with `label()` are not checked; step 6 catches them. Shorten the words or widen the box; never shrink the font.
 5. **Export.** `bash scripts/doctor.sh` to check the Mac; when `rsvg-convert` is missing, its → line says `brew install librsvg`. Then run the step 4 command without `--no-png`. `rsvg-convert` draws the PNGs the doc shows into its `-diagrams` folder, and the command prints the Markdown for each figure. If `rsvg-convert` is missing, the build prints the doctor's report instead: do what its → lines say.
 6. **Look at every PNG once.** Open each with the Read tool. You are looking for four things: two labels touching, a label past an edge, an arrow crossing text, and a file box whose last line rides its bottom edge. Then look at each elbow: when shifting one box left or right would let its arrow run straight, shift the box. Fix the spec and export again. One look per round is enough; the width checks catch the rest.
 7. **Embed.** Paste each figure's Markdown where its picture goes, straight from the output; do not save it to a file. A sequence gets its Mermaid text from the build. A data flow gets a details block only when its figure has `mermaid` text: write a short Mermaid flowchart by hand, or leave the block out.
-8. **Commit the doc and its `-diagrams` folder.** The spec stays in the runtime folder. When the user wants the spec kept with the doc, copy it there.
+8. **Commit the doc and its `-diagrams` folder.** The spec stays in the runtime folder, which git ignores. When the user wants the spec kept with the doc, copy it there.
 
 To change the theme later, export again with the new `--theme`: the build removes the doc's PNGs in the theme it no longer shows. If `where` cannot make the runtime folder, ask the user where the build files may go, and pass that folder as `--out` in steps 4 and 5.
 
 ## The sample
 
-`sample/spec.py` draws this skill's own pipeline, in one data flow and one sequence. When the user asks for the sample, run `python3 -I scripts/render.py sample/spec.py --out runtime/sample` from this skill's folder. Then show the user the four PNGs in `runtime/sample/`, and open them if you can.
+`sample/spec.py` draws this skill's own pipeline, in one data flow and one sequence. When the user asks for the sample, run it from the user's project folder, so the build files land in the project: `python3 -I SKILL/scripts/render.py SKILL/sample/spec.py --out .readable-diagrams/sample`, with this skill's folder as SKILL. Then show the user the four PNGs in `.readable-diagrams/sample/`, and open them if you can.
 
 ## The house style, and why
 
@@ -71,10 +71,9 @@ These are not decoration. Each one came from something that made a picture hard 
 | `scripts/example_spec.py` | A complete worked example: one data flow and two sequences |
 | `scripts/render.py` | One command: `where` finds a doc's runtime folder; a build writes the SVGs there, draws the doc's PNGs with `rsvg-convert` and prints the Markdown |
 | `scripts/doctor.sh` | Checks Python, `rsvg-convert` and the fonts; names the Homebrew command for anything missing |
-| `scripts/tests/test_figlib.py` | Builds the example and the sample, checks each SVG is well-formed and complete on its own, checks the width and height rules refuse what they should, and checks a doc's folder gets only its pictures |
+| `scripts/tests/test_figlib.py` | Builds the example and the sample, checks each SVG is well-formed and complete on its own, checks the width and height rules refuse what they should, and checks a doc's folder gets only its pictures while git sees nothing in `.readable-diagrams/` |
 | `references/layout.md` | The coordinate cookbook: where the rows sit in the example, and how to adapt them to two, three or four machines |
 | `HOW-IT-WORKS.md` | For people: the whole process, step by step, built around the sample |
 | `sample/` | A small spec and the pictures it makes: the skill's own pipeline, drawn by the skill |
-| `runtime/` | Made by `render.py` and ignored by git: one folder per doc, with its spec, SVGs and Mermaid files |
 
 Nothing here needs the network once `rsvg-convert` is installed. The export runs no Mermaid and no external service.

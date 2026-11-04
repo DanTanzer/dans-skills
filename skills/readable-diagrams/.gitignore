@@ -1,3 +1,2 @@
 # This skill carries its own ignore rules, so a copied skill folder stays clean.
-runtime/
 __pycache__/

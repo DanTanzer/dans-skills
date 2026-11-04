@@ -26,7 +26,7 @@ dans-skills/                         repository, marketplace and plugin "dans-sk
     └── readable-diagrams/           skill "readable-diagrams"
         ├── SKILL.md                 the instructions Claude reads when the skill runs
         ├── HOW-IT-WORKS.md          for people: one build, step by step
-        ├── .gitignore               keeps what a build makes out of git, so a copied skill stays clean
+        ├── .gitignore               keeps Python caches out of git, so a copied skill stays clean
         ├── references/
         │   └── layout.md            layout numbers, read only when needed
         ├── sample/                  a small spec and the pictures it makes
