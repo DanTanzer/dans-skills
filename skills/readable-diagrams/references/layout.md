@@ -1,6 +1,6 @@
 # Layout cookbook
 
-The numbers behind `example_spec.py`, so a new figure can start from them instead of from zero. All figures are 1000 units wide.
+The numbers behind `example_spec.py`, so a new diagram can start from them instead of from zero. All diagrams are 1000 units wide.
 
 ## The text sizes
 
@@ -13,7 +13,7 @@ The numbers behind `example_spec.py`, so a new figure can start from them instea
 | `tm tb` | a file or folder name in a big store box | 15px mono bold | 9.03 |
 | `tm tb sm` | a file name in a small store box | 12.5px mono bold | 7.53 |
 
-`figlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that. `zt` is the exception: it sits near the widest capitals, because a subtitle that follows the title is placed by it.
+`diagramlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that. `zt` is the exception: it sits near the widest capitals, because a subtitle that follows the title is placed by it.
 
 ## A data flow with machines across the top and a store across the bottom
 
@@ -49,7 +49,7 @@ Gaps between neighbours for 4 and 5 lifelines, and the label length that fits:
 | 4 | 283 | 43 | 89 |
 | 5 | 212 | 31 | 66 |
 
-Keep one story per sequence. When a flow has two parts (an exchange, then a broadcast), make two figures. A sequence longer than about 14 rows is two figures.
+Keep one story per sequence. When a flow has two parts (an exchange, then a broadcast), make two diagrams. A sequence longer than about 14 rows is two diagrams.
 
 ## Arrow kinds
 
@@ -84,4 +84,4 @@ Where the bend goes:
 
 ## The export card
 
-figlib builds one card per figure and theme: the legend entries that figure uses, then the figure, on the surface colour with a one-unit border, 920 wide. The figure inside is 898 wide, so a 1000-wide figure draws at 0.898. Legend entries flow like words, 18 apart, and wrap to a second row when they need it. `rsvg-convert --zoom 2` draws the card at 1840 pixels, transparent outside its rounded corners. A figure that uses only `file` and `say` gets a two-entry legend.
+diagramlib builds one card per diagram and theme: the legend entries that diagram uses, then the diagram, on the surface colour with a one-unit border, 920 wide. The diagram inside is 898 wide, so a 1000-wide diagram draws at 0.898. Legend entries flow like words, 18 apart, and wrap to a second row when they need it. `rsvg-convert --zoom 2` draws the card at 1840 pixels, transparent outside its rounded corners. A diagram that uses only `file` and `say` gets a two-entry legend.

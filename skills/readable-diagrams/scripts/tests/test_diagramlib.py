@@ -1,4 +1,4 @@
-"""figlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
+"""diagramlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
 height their text needs, the doctor names rsvg-convert, a doc gets only the pictures it shows while every build file
 stays in .readable-diagrams/ at the project root, which git ignores, and the Markdown block has the right shape for
 one theme or both."""
@@ -17,7 +17,7 @@ import xml.dom.minidom
 
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS)
-import figlib  # noqa: E402
+import diagramlib  # noqa: E402
 import render  # noqa: E402
 
 SAMPLE = os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py")
@@ -69,22 +69,22 @@ def fake_png(svg, png):
 class ExampleBuildsTest(unittest.TestCase):
     def setUp(self):
         self.out = tempfile.mkdtemp()
-        self.figures = figlib.build(render.load_spec(os.path.join(SCRIPTS, "example_spec.py")), self.out)
+        self.diagrams = diagramlib.build(render.load_spec(os.path.join(SCRIPTS, "example_spec.py")), self.out)
 
-    def test_three_figures_each_with_a_light_and_a_dark_svg(self):
-        self.assertEqual(["sync-data-flow", "sync-sequence-1-ask-and-answer", "sync-sequence-2-broadcast"], [f["stem"] for f in self.figures])
+    def test_three_diagrams_each_with_a_light_and_a_dark_svg(self):
+        self.assertEqual(["sync-data-flow", "sync-sequence-1-ask-and-answer", "sync-sequence-2-broadcast"], [f["stem"] for f in self.diagrams])
         names = os.listdir(self.out)
-        for f in self.figures:
+        for f in self.diagrams:
             self.assertIn(f"{f['stem']}.svg", names)
             self.assertIn(f"{f['stem']}-dark.svg", names)
 
     def test_every_svg_is_well_formed_xml(self):
-        for f in self.figures:
+        for f in self.diagrams:
             for path in f["files"].values():
                 xml.dom.minidom.parseString(read(path))
 
     def test_each_svg_is_complete_on_its_own(self):
-        for f in self.figures:
+        for f in self.diagrams:
             for path in f["files"].values():
                 svg = read(path)
                 self.assertIn("<style>", svg)
@@ -93,24 +93,24 @@ class ExampleBuildsTest(unittest.TestCase):
                 self.assertIsNone(re.search(r"href=|@import|url\((?!#)", svg), f"{path}: reaches outside the file")
 
     def test_the_light_and_the_dark_svg_carry_their_own_colours(self):
-        light, dark = (read(self.figures[0]["files"][theme]) for theme in ("light", "dark"))
-        self.assertIn(f".card {{ fill: {figlib.THEMES['light']['--surface']};", light)
-        self.assertIn(f".card {{ fill: {figlib.THEMES['dark']['--surface']};", dark)
-        self.assertEqual(light.replace(figlib.theme_css("light"), ""), dark.replace(figlib.theme_css("dark"), ""))
+        light, dark = (read(self.diagrams[0]["files"][theme]) for theme in ("light", "dark"))
+        self.assertIn(f".card {{ fill: {diagramlib.THEMES['light']['--surface']};", light)
+        self.assertIn(f".card {{ fill: {diagramlib.THEMES['dark']['--surface']};", dark)
+        self.assertEqual(light.replace(diagramlib.theme_css("light"), ""), dark.replace(diagramlib.theme_css("dark"), ""))
 
-    def test_the_legend_shows_only_the_arrow_kinds_a_figure_draws(self):
-        self.assertEqual(["file", "ring", "say", "loc"], figlib.used_kinds(self.figures[0]["svg"]))
-        sample = figlib.build(render.load_spec(SAMPLE), tempfile.mkdtemp())[0]
-        self.assertEqual(["file", "say"], figlib.used_kinds(sample["svg"]))
+    def test_the_legend_shows_only_the_arrow_kinds_a_diagram_draws(self):
+        self.assertEqual(["file", "ring", "say", "loc"], diagramlib.used_kinds(self.diagrams[0]["svg"]))
+        sample = diagramlib.build(render.load_spec(SAMPLE), tempfile.mkdtemp())[0]
+        self.assertEqual(["file", "say"], diagramlib.used_kinds(sample["svg"]))
         svg = read(sample["files"]["light"])
         self.assertIn('class="lg-file"', svg)
         self.assertNotIn('class="lg-ring"', svg)
 
-    def test_a_figure_given_as_svg_text_with_its_own_size_still_makes_a_valid_card(self):
-        spec = type("Spec", (), {"FIGURES": [{"stem": "raw", "alt": "A line.", "svg": (
+    def test_a_diagram_given_as_svg_text_with_its_own_size_still_makes_a_valid_card(self):
+        spec = type("Spec", (), {"DIAGRAMS": [{"stem": "raw", "alt": "A line.", "svg": (
             '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="50" viewBox="0 0 1000 100">'
             '<line class="a a-file" x1="10" y1="50" x2="990" y2="50"/></svg>')}]})
-        card = read(figlib.build(spec, tempfile.mkdtemp())[0]["files"]["light"])
+        card = read(diagramlib.build(spec, tempfile.mkdtemp())[0]["files"]["light"])
         xml.dom.minidom.parseString(card)
         self.assertIn('<svg x="11" y="43.4" width="898" height="89.8"', card)
 
@@ -125,29 +125,29 @@ class FitChecksTest(unittest.TestCase):
     def test_a_message_label_too_long_for_its_gap_is_refused(self):
         seq = {"id": "x", "title": "t", "caption": "c", "lifelines": [("A", "A", "one"), ("B", "B", "two")],
                "rows": [("msg", "A", "B", "x" * 200, "file")]}
-        with self.assertRaises(figlib.FigureError):
-            figlib.render_sequence(seq)
+        with self.assertRaises(diagramlib.DiagramError):
+            diagramlib.render_sequence(seq)
 
     def test_a_box_line_too_long_is_refused(self):
-        c = figlib.Canvas("t", 400, 200, "t")
-        with self.assertRaises(figlib.FigureError):
+        c = diagramlib.Canvas("t", 400, 200, "t")
+        with self.assertRaises(diagramlib.DiagramError):
             c.box(10, 10, 100, 60, "ok", ["this line is far too long for a hundred pixel box"])
 
     def test_a_note_needs_exactly_two_lines(self):
         seq = {"id": "x", "title": "t", "caption": "c", "lifelines": [("A", "A", "one"), ("B", "B", "two")],
                "rows": [("note", "A", ["only one line"])]}
-        with self.assertRaises(figlib.FigureError):
-            figlib.render_sequence(seq)
+        with self.assertRaises(diagramlib.DiagramError):
+            diagramlib.render_sequence(seq)
 
     def test_mermaid_refuses_a_semicolon(self):
         seq = {"id": "x", "title": "t", "caption": "c", "lifelines": [("A", "A", "one"), ("B", "B", "two")],
                "rows": [("msg", "A", "B", "get; reply due", "file")]}
-        with self.assertRaises(figlib.FigureError):
-            figlib.mermaid_sequence(seq)
+        with self.assertRaises(diagramlib.DiagramError):
+            diagramlib.mermaid_sequence(seq)
 
     def test_unknown_arrow_kind_is_refused(self):
-        with self.assertRaises(figlib.FigureError):
-            figlib.line(0, 0, 1, 1, "http", "p")
+        with self.assertRaises(diagramlib.DiagramError):
+            diagramlib.line(0, 0, 1, 1, "http", "p")
 
 
 class BoxHeightTest(unittest.TestCase):
@@ -156,15 +156,15 @@ class BoxHeightTest(unittest.TestCase):
 
     def test_box_height_is_the_least_height_a_box_accepts(self):
         for title, lines, muted in self.SHAPES:
-            need = figlib.box_height(title, lines, muted)
-            figlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted)
-            with self.assertRaisesRegex(figlib.FigureError, f"needs {need}px: box_height"):
-                figlib.Canvas("b", 400, 300).box(10, 10, 200, need - 1, title, lines, muted)
+            need = diagramlib.box_height(title, lines, muted)
+            diagramlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted)
+            with self.assertRaisesRegex(diagramlib.DiagramError, f"needs {need}px: box_height"):
+                diagramlib.Canvas("b", 400, 300).box(10, 10, 200, need - 1, title, lines, muted)
 
     def test_at_that_height_the_last_line_sits_16_above_the_bottom(self):
         for title, lines, muted in self.SHAPES:
-            need = figlib.box_height(title, lines, muted)
-            svg = figlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted).svg()
+            need = diagramlib.box_height(title, lines, muted)
+            svg = diagramlib.Canvas("b", 400, 300).box(10, 10, 200, need, title, lines, muted).svg()
             last = max(float(y) for y in re.findall(r'<text class="[^"]*" x="[\d.]+" y="([\d.]+)"', svg))
             self.assertEqual(16, 10 + need - last, title)
 
@@ -174,36 +174,36 @@ class ElbowTest(unittest.TestCase):
         return re.search(r'<path class="a a-file" d="([^"]+)"', svg).group(1)
 
     def test_an_elbow_goes_down_across_halfway_then_down(self):
-        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file").svg()
+        svg = diagramlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file").svg()
         self.assertEqual("M10 10 L10 55 L200 55 L200 100", self.path_d(svg))
         self.assertIn('marker-end="url(#ah-file-e)"', svg)
 
     def test_first_h_goes_sideways_then_down_then_sideways(self):
-        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", first="h").svg()
+        svg = diagramlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", first="h").svg()
         self.assertEqual("M10 10 L105 10 L105 100 L200 100", self.path_d(svg))
 
     def test_at_an_ends_own_y_makes_one_bend(self):
-        svg = figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=100).svg()
+        svg = diagramlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=100).svg()
         self.assertEqual("M10 10 L10 100 L200 100", self.path_d(svg))
 
     def test_an_arrowhead_needs_a_last_leg_of_16(self):
-        with self.assertRaisesRegex(figlib.FigureError, "last leg is 5 long, but an arrowhead needs 16"):
-            figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=95)
-        with self.assertRaisesRegex(figlib.FigureError, "first leg is 4 long"):
-            figlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=14, both=True)
+        with self.assertRaisesRegex(diagramlib.DiagramError, "last leg is 5 long, but an arrowhead needs 16"):
+            diagramlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=95)
+        with self.assertRaisesRegex(diagramlib.DiagramError, "first leg is 4 long"):
+            diagramlib.Canvas("e", 400, 300).elbow(10, 10, 200, 100, "file", at=14, both=True)
 
     def test_a_diagonal_arrow_is_refused_unless_it_is_meant(self):
-        with self.assertRaisesRegex(figlib.FigureError, r"diagonal: move a box so the ends share an x or a y, or draw it with elbow\(\)"):
-            figlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file")
-        self.assertIn("<line", figlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file", diagonal=True).svg())
+        with self.assertRaisesRegex(diagramlib.DiagramError, r"diagonal: move a box so the ends share an x or a y, or draw it with elbow\(\)"):
+            diagramlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file")
+        self.assertIn("<line", diagramlib.Canvas("d", 400, 300).arrow(10, 10, 200, 100, "file", diagonal=True).svg())
 
-    def test_an_elbow_figure_makes_a_valid_card_with_its_kind_in_the_legend(self):
-        draw = figlib.Canvas("e", 1000, 300, "An elbow.").elbow(100, 40, 600, 250, "ring", both=True).svg
-        figure = figlib.build(type("Spec", (), {"FIGURES": [{"stem": "e", "alt": "An elbow.", "svg": draw}]}),
+    def test_an_elbow_diagram_makes_a_valid_card_with_its_kind_in_the_legend(self):
+        draw = diagramlib.Canvas("e", 1000, 300, "An elbow.").elbow(100, 40, 600, 250, "ring", both=True).svg
+        diagram = diagramlib.build(type("Spec", (), {"DIAGRAMS": [{"stem": "e", "alt": "An elbow.", "svg": draw}]}),
                               tempfile.mkdtemp())[0]
-        card = read(figure["files"]["light"])
+        card = read(diagram["files"]["light"])
         xml.dom.minidom.parseString(card)
-        self.assertEqual(["ring"], figlib.used_kinds(figure["svg"]))
+        self.assertEqual(["ring"], diagramlib.used_kinds(diagram["svg"]))
         self.assertIn('class="lg-ring"', card)
 
 
@@ -213,32 +213,32 @@ class ZoneTitleTest(unittest.TestCase):
 
     def test_a_zone_subtitle_starts_clear_of_its_title(self):
         for title, real in self.MEASURED.items():
-            svg = figlib.Canvas("z", 1000, 120, "z").zone(0, 0, 600, 100, title, "start here").svg()
+            svg = diagramlib.Canvas("z", 1000, 120, "z").zone(0, 0, 600, 100, title, "start here").svg()
             sub_x = float(re.search(r'<text class="ts" x="([\d.]+)"', svg).group(1))
             self.assertGreaterEqual(sub_x - 18 - real, 16, f"{title}: the subtitle starts too close")
 
 
 class SampleBuildsTest(unittest.TestCase):
-    def test_the_sample_builds_both_figures_with_mermaid(self):
+    def test_the_sample_builds_both_diagrams_with_mermaid(self):
         out = tempfile.mkdtemp()
-        figures = figlib.build(render.load_spec(SAMPLE), out)
-        self.assertEqual(["data-flow", "build-sequence"], [f["stem"] for f in figures])
-        for f in figures:
+        diagrams = diagramlib.build(render.load_spec(SAMPLE), out)
+        self.assertEqual(["data-flow", "build-sequence"], [f["stem"] for f in diagrams])
+        for f in diagrams:
             self.assertTrue(os.path.exists(os.path.join(out, f"{f['stem']}.mmd")))
 
 
 class ThemeChoiceTest(unittest.TestCase):
     def test_one_theme_builds_only_that_themes_svg(self):
         out = tempfile.mkdtemp()
-        figures = figlib.build(render.load_spec(SAMPLE), out, ("dark",))
-        self.assertEqual([{"dark"}, {"dark"}], [set(f["files"]) for f in figures])
+        diagrams = diagramlib.build(render.load_spec(SAMPLE), out, ("dark",))
+        self.assertEqual([{"dark"}, {"dark"}], [set(f["files"]) for f in diagrams])
         self.assertEqual(["build-sequence-dark.svg", "data-flow-dark.svg"], sorted(n for n in os.listdir(out) if n.endswith(".svg")))
 
     def test_an_alt_text_with_a_quote_stops_the_build_before_any_file(self):
-        spec = type("Spec", (), {"FIGURES": [{"stem": "q", "alt": 'the "store"', "svg": figlib.Canvas("q", 100, 50).svg}]})
+        spec = type("Spec", (), {"DIAGRAMS": [{"stem": "q", "alt": 'the "store"', "svg": diagramlib.Canvas("q", 100, 50).svg}]})
         out = tempfile.mkdtemp()
-        with self.assertRaisesRegex(figlib.FigureError, "alt text may not hold a quote"):
-            figlib.build(spec, out)
+        with self.assertRaisesRegex(diagramlib.DiagramError, "alt text may not hold a quote"):
+            diagramlib.build(spec, out)
         self.assertEqual([], os.listdir(out))
 
 
@@ -437,19 +437,19 @@ class RenderPathsTest(unittest.TestCase):
 
 class PictureBlockTest(unittest.TestCase):
     def test_both_themes_dark_source_then_light_img_then_closed_mermaid(self):
-        block = figlib.picture_block("x-y", "Alt text.", "doc-diagrams", "sequenceDiagram\n  A->>B: hi")
+        block = diagramlib.picture_block("x-y", "Alt text.", "doc-diagrams", "sequenceDiagram\n  A->>B: hi")
         self.assertIn('srcset="doc-diagrams/x-y-dark.png"', block)
         self.assertIn('src="doc-diagrams/x-y.png" alt="Alt text."', block)
         self.assertIn("<details>", block)
         self.assertIn("```mermaid\nsequenceDiagram", block)
 
     def test_one_theme_is_a_plain_markdown_image_of_that_themes_png(self):
-        self.assertEqual("![A \\[b\\] c.](d/x.png)\n", figlib.picture_block("x", "A [b] c.", "d", None, ("light",)))
-        self.assertEqual("![Alt.](d/x-dark.png)\n", figlib.picture_block("x", "Alt.", "d", None, ("dark",)))
+        self.assertEqual("![A \\[b\\] c.](d/x.png)\n", diagramlib.picture_block("x", "A [b] c.", "d", None, ("light",)))
+        self.assertEqual("![Alt.](d/x-dark.png)\n", diagramlib.picture_block("x", "Alt.", "d", None, ("dark",)))
 
     def test_alt_text_may_not_hold_a_quote(self):
-        with self.assertRaises(figlib.FigureError):
-            figlib.picture_block("x", 'say "hi"', "d")
+        with self.assertRaises(diagramlib.DiagramError):
+            diagramlib.picture_block("x", 'say "hi"', "d")
 
 
 if __name__ == "__main__":

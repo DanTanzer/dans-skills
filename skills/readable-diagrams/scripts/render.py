@@ -1,4 +1,4 @@
-"""Build a figure spec and draw its PNGs, in one command.
+"""Build a diagram spec and draw its PNGs, in one command.
 
     python3 -I render.py where DOC.md
     python3 -I render.py SPEC.py --doc DOC.md --theme light|dark|both [--no-png]
@@ -8,9 +8,9 @@ where prints DOC.md's runtime folder, and makes it: .readable-diagrams/ at the r
 DOC.md's own path, such as .readable-diagrams/docs/design.md/. DOC.md's spec goes there, as spec.py. The first time,
 .readable-diagrams/ gets a .gitignore that ignores everything in the folder, itself included.
 
-With --doc, every build file goes in DOC.md's runtime folder: an SVG per figure and theme, and a .mmd where there is
+With --doc, every build file goes in DOC.md's runtime folder: an SVG per diagram and theme, and a .mmd where there is
 Mermaid. rsvg-convert draws only the PNGs that DOC.md shows, into <doc name>-diagrams/ next to DOC.md. Then the
-Markdown for each figure is printed, to paste into DOC.md. --theme is required with --doc, because only the user knows
+Markdown for each diagram is printed, to paste into DOC.md. --theme is required with --doc, because only the user knows
 which pictures the doc should show.
 
 With --out instead, everything goes in DIR, in both themes unless --theme says otherwise. --no-png stops after the
@@ -23,15 +23,15 @@ import re
 import subprocess
 import sys
 
-sys.dont_write_bytecode = True  # loading a spec leaves no __pycache__ folder beside it, or beside figlib
+sys.dont_write_bytecode = True  # loading a spec leaves no __pycache__ folder beside it, or beside diagramlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_NAME = ".readable-diagrams"
 IGNORE_EVERYTHING = "# The readable-diagrams skill makes everything in this folder. None of it belongs in git.\n*\n"
 sys.path.insert(0, HERE)
-import figlib  # noqa: E402
+import diagramlib  # noqa: E402
 
-THEMES = {"light": ("light",), "dark": ("dark",), "both": figlib.BOTH}
+THEMES = {"light": ("light",), "dark": ("dark",), "both": diagramlib.BOTH}
 
 
 def doc_name(doc):
@@ -109,7 +109,7 @@ def cannot_make(folder, err):
 
 
 def load_spec(path):
-    spec = importlib.util.spec_from_file_location("figure_spec", path)
+    spec = importlib.util.spec_from_file_location("diagram_spec", path)
     module = importlib.util.module_from_spec(spec)
     sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
     spec.loader.exec_module(module)
@@ -164,15 +164,15 @@ def where(args):
     return 0
 
 
-def draw_pngs(figures, png_dir):
-    """rsvg-convert draws each figure's SVGs as PNGs in png_dir. When this call made png_dir and the export fails
+def draw_pngs(diagrams, png_dir):
+    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir. When this call made png_dir and the export fails
     before a PNG is in it, the empty folder goes again, so a failed export leaves nothing next to the doc."""
     made = not os.path.isdir(png_dir)
     os.makedirs(png_dir, exist_ok=True)
     try:
-        for f in figures:
+        for f in diagrams:
             for theme, svg in f["files"].items():
-                png = os.path.join(png_dir, f"{f['stem']}{figlib.THEME_SUFFIX[theme]}.png")
+                png = os.path.join(png_dir, f"{f['stem']}{diagramlib.THEME_SUFFIX[theme]}.png")
                 try:
                     done = rasterize(svg, png)
                 except FileNotFoundError:
@@ -186,11 +186,11 @@ def draw_pngs(figures, png_dir):
             os.rmdir(png_dir)
 
 
-def drop_other_theme(figures, png_dir, themes):
+def drop_other_theme(diagrams, png_dir, themes):
     """After a theme change, remove this spec's PNGs in the theme the doc no longer shows. Returns their paths."""
     gone = []
-    for f in figures:
-        for theme, suffix in figlib.THEME_SUFFIX.items():
+    for f in diagrams:
+        for theme, suffix in diagramlib.THEME_SUFFIX.items():
             path = os.path.join(png_dir, f"{f['stem']}{suffix}.png")
             if theme not in themes and os.path.exists(path):
                 os.remove(path)
@@ -198,11 +198,11 @@ def drop_other_theme(figures, png_dir, themes):
     return gone
 
 
-def print_blocks(figures, doc, png_dir, themes):
+def print_blocks(diagrams, doc, png_dir, themes):
     folder = os.path.basename(png_dir)
-    print(f"\nThe Markdown for {doc}, one block per figure. Paste each block where its picture goes:")
-    for f in figures:
-        block = figlib.picture_block(f["stem"], f["alt"], folder, f["mermaid"], themes)
+    print(f"\nThe Markdown for {doc}, one block per diagram. Paste each block where its picture goes:")
+    for f in diagrams:
+        block = diagramlib.picture_block(f["stem"], f["alt"], folder, f["mermaid"], themes)
         print(f"\n{f['stem']}:\n{block}", end="")
 
 
@@ -223,23 +223,23 @@ def main(argv):
     except OSError as err:
         return cannot_make(out, err)
     try:
-        figures = figlib.build(load_spec(opts["spec"]), out, themes)
-    except figlib.FigureError as err:
-        print(f"figure error: {err}")
+        diagrams = diagramlib.build(load_spec(opts["spec"]), out, themes)
+    except diagramlib.DiagramError as err:
+        print(f"diagram error: {err}")
         return 1
-    print(f"built {len(figures)} figure(s) in {out}: " + ", ".join(f["stem"] for f in figures))
+    print(f"built {len(diagrams)} diagram(s) in {out}: " + ", ".join(f["stem"] for f in diagrams))
     if not opts["png"]:
         return 0
     png_dir = diagrams_folder(doc) if doc else out
-    failed = draw_pngs(figures, png_dir)
+    failed = draw_pngs(diagrams, png_dir)
     if failed:
         return failed
     words = " and ".join(themes)
-    print(f"{len(figures) * len(themes)} PNG(s), {words}, in {png_dir}. Look at each one once before you ship it.")
+    print(f"{len(diagrams) * len(themes)} PNG(s), {words}, in {png_dir}. Look at each one once before you ship it.")
     if doc:
-        for path in drop_other_theme(figures, png_dir, themes):
+        for path in drop_other_theme(diagrams, png_dir, themes):
             print(f"removed {path}: {doc} now shows {words} only")
-        print_blocks(figures, doc, png_dir, themes)
+        print_blocks(diagrams, doc, png_dir, themes)
     return 0
 
 

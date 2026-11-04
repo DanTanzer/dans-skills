@@ -33,7 +33,7 @@ else
   fail "Python" "not found" "install Python 3, for example: brew install python"
 fi
 
-# rsvg-convert, from librsvg, draws each figure's SVG as a PNG. Homebrew installs it.
+# rsvg-convert, from librsvg, draws each diagram's SVG as a PNG. Homebrew installs it.
 if command -v rsvg-convert >/dev/null 2>&1; then
   line "$YES" "rsvg-convert" "$(rsvg-convert --version 2>/dev/null | head -n 1 | sed 's/^rsvg-convert version //')"
 elif command -v brew >/dev/null 2>&1; then
