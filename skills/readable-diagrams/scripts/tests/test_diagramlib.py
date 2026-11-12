@@ -1,7 +1,7 @@
 """diagramlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
-height their text needs, the doctor names rsvg-convert, a doc gets only the pictures it shows while every build file
-stays in .readable-diagrams/ at the project root, which git ignores, and the Markdown block has the right shape for
-one theme or both."""
+height their text needs, the doctor names rsvg-convert, a doc gets its pictures in readable-diagrams/<doc name>/ with the spec
+and the Mermaid text inside each one and keeps no build file, and the Markdown block has the right shape for one theme
+or both."""
 import contextlib
 import io
 import os
@@ -18,7 +18,9 @@ import xml.dom.minidom
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS)
 import diagramlib  # noqa: E402
+import embed_spec  # noqa: E402
 import render  # noqa: E402
+from tests.pngs import chunks_of, tiny_png  # noqa: E402
 
 SAMPLE = os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py")
 
@@ -60,7 +62,14 @@ def run_doctor(path_value):
 
 
 def fake_png(svg, png):
-    """Stands in for rsvg-convert: writes a small file where the PNG goes."""
+    """Stands in for rsvg-convert: writes a small, valid PNG where the PNG goes."""
+    with open(png, "wb") as handle:
+        handle.write(tiny_png())
+    return subprocess.CompletedProcess(["rsvg-convert"], 0, "", "")
+
+
+def fake_garbage(svg, png):
+    """Stands in for an rsvg-convert that wrote something that is not a PNG."""
     with open(png, "wb") as handle:
         handle.write(b"drawn from " + os.path.basename(svg).encode())
     return subprocess.CompletedProcess(["rsvg-convert"], 0, "", "")
@@ -243,117 +252,196 @@ class ThemeChoiceTest(unittest.TestCase):
 
 
 class DocFolderTest(unittest.TestCase):
-    """A doc's folder gets the pictures the doc shows and nothing else. Every build file stays in .readable-diagrams/ at
-    the root of the doc's git project, which ignores everything in it."""
+    """A doc gets its pictures in readable-diagrams/<doc name>/ next to it, light unless the user asked for more, each picture
+    carrying its spec and its own Mermaid text once. Nothing else is kept: the build files go in a temporary folder that
+    is removed."""
 
     def setUp(self):
         self.project = tempfile.mkdtemp()
-        os.makedirs(os.path.join(self.project, ".git"))
-        self.build = os.path.join(self.project, ".readable-diagrams")
+        self.scratch = tempfile.mkdtemp()
+        for folder in (self.project, self.scratch):
+            self.addCleanup(shutil.rmtree, folder, True)
         self.docs = os.path.join(self.project, "docs")
         os.makedirs(self.docs)
         self.doc = os.path.join(self.docs, "Design Notes.md")
         write(self.doc, "# Design notes\n")
-        self.pictures = os.path.join(self.docs, "Design-Notes-diagrams")
+        self.diagrams = os.path.join(self.docs, "readable-diagrams")
+        self.pictures = os.path.join(self.diagrams, "Design-Notes")
+        self.spec = os.path.join(self.scratch, "spec.py")
+        shutil.copy(SAMPLE, self.spec)
 
-    def run_render(self, *args):
-        with mock.patch.object(render, "rasterize", fake_png), contextlib.redirect_stdout(io.StringIO()) as said:
+    def run_render(self, *args, rasterizer=fake_png):
+        with mock.patch.object(render, "rasterize", rasterizer), contextlib.redirect_stdout(io.StringIO()) as said:
             code = render.main(["render.py", *args])
         return code, said.getvalue()
 
-    def spec_in_runtime(self, doc=None):
-        code, said = self.run_render("where", doc or self.doc)
+    def test_a_doc_gets_a_diagrams_folder_with_one_subfolder_for_its_pictures(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc)
         self.assertEqual(0, code, said)
-        spec = os.path.join(said.strip(), "spec.py")
-        shutil.copy(SAMPLE, spec)
-        return spec
+        self.assertEqual(["Design Notes.md", "readable-diagrams"], sorted(os.listdir(self.docs)))
+        self.assertEqual(["Design-Notes"], os.listdir(self.diagrams))
+        self.assertEqual(["build-sequence.png", "data-flow.png"], sorted(os.listdir(self.pictures)))
+        self.assertIn("](readable-diagrams/Design-Notes/data-flow.png)", said)
 
-    def test_where_makes_the_docs_folder_in_readable_diagrams_at_the_project_root(self):
-        code, said = self.run_render("where", self.doc)
-        folder = said.strip()
-        self.assertEqual(0, code)
-        self.assertEqual(os.path.join(self.build, "docs", "Design Notes.md"), folder)
-        self.assertTrue(os.path.isdir(folder))
-        self.assertEqual(folder, self.run_render("where", self.doc)[1].strip())
-        other = os.path.join(self.project, "specs", "Design Notes.md")
-        self.assertEqual(os.path.join(self.build, "specs", "Design Notes.md"), render.runtime_folder(other))
+    def test_the_default_is_the_light_picture_and_nobody_is_asked(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        self.assertNotIn("<picture>", said)
+        self.assertNotIn("-dark", said)
+        self.assertNotIn("Ask the user", said)
 
-    def test_the_project_root_is_the_nearest_folder_with_git(self):
-        worktree = os.path.join(self.project, "worktrees", "branch")
-        os.makedirs(os.path.join(worktree, "docs"))
-        write(os.path.join(worktree, ".git"), "gitdir: elsewhere\n")
-        self.assertEqual(worktree, render.project_root(os.path.join(worktree, "docs", "a.md")))
-        self.assertEqual(self.project, render.project_root(self.doc))
-        loose = tempfile.mkdtemp()
-        self.assertEqual(os.path.join(loose, ".readable-diagrams", "a.md"), render.runtime_folder(os.path.join(loose, "a.md")))
+    def test_two_docs_in_one_folder_each_keep_their_pictures_in_their_own_subfolder(self):
+        other = os.path.join(self.docs, "Other.md")
+        write(other, "# Other\n")
+        self.assertEqual(0, self.run_render(self.spec, "--doc", self.doc)[0])
+        self.assertEqual(0, self.run_render(self.spec, "--doc", other)[0])
+        self.assertEqual(["Design-Notes", "Other"], sorted(os.listdir(self.diagrams)))
+        self.assertEqual(["build-sequence.png", "data-flow.png"], sorted(os.listdir(os.path.join(self.diagrams, "Other"))))
 
-    def test_readable_diagrams_ignores_everything_in_it(self):
-        self.spec_in_runtime()
-        self.assertEqual("*", read(os.path.join(self.build, ".gitignore")).splitlines()[-1])
-        self.assertEqual([".git", ".readable-diagrams", "docs"], sorted(os.listdir(self.project)))
+    def test_no_build_file_is_kept(self):
+        made = []
+        real = tempfile.mkdtemp
+
+        def record(*args, **kwargs):
+            made.append(real(*args, **kwargs))
+            return made[-1]
+
+        with mock.patch.object(render.tempfile, "mkdtemp", record):
+            code, said = self.run_render(self.spec, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        self.assertEqual(1, len(made))
+        self.assertFalse(os.path.exists(made[0]))
+        self.assertEqual(["docs"], os.listdir(self.project))
+        self.assertEqual(["spec.py"], os.listdir(self.scratch))
+
+    def test_a_check_build_without_pngs_keeps_nothing(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--no-png", "--keep-svg")
+        self.assertEqual(0, code, said)
+        self.assertIn("built 2 diagram(s): data-flow, build-sequence", said)
+        self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
+
+    def test_the_svgs_are_not_kept_unless_asked_for(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
+        self.assertEqual(0, code, said)
+        self.assertEqual([], [n for n in os.listdir(self.pictures) if n.endswith(".svg")])
+
+    def test_keep_svg_keeps_each_svg_beside_its_png_under_the_same_name(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both", "--keep-svg")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["build-sequence-dark.png", "build-sequence-dark.svg", "build-sequence.png",
+                          "build-sequence.svg", "data-flow-dark.png", "data-flow-dark.svg", "data-flow.png",
+                          "data-flow.svg"], sorted(os.listdir(self.pictures)))
+        self.assertTrue(read(os.path.join(self.pictures, "data-flow-dark.svg")).lstrip().startswith("<svg"))
+
+    def test_a_build_without_keep_svg_removes_the_svgs_an_earlier_build_kept(self):
+        self.run_render(self.spec, "--doc", self.doc, "--keep-svg")
+        code, said = self.run_render(self.spec, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        self.assertEqual(["build-sequence.png", "data-flow.png"], sorted(os.listdir(self.pictures)))
+        self.assertIn("data-flow.svg: --keep-svg is off", said)
+
+    def test_a_theme_change_removes_the_other_themes_svg_with_its_png(self):
+        self.run_render(self.spec, "--doc", self.doc, "--theme", "both", "--keep-svg")
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "light", "--keep-svg")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["build-sequence.png", "build-sequence.svg", "data-flow.png", "data-flow.svg"],
+                         sorted(os.listdir(self.pictures)))
+
+    def test_doc_and_out_together_are_refused(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--out", os.path.join(self.scratch, "build"))
+        self.assertEqual(2, code)
+        self.assertIn("use --doc or --out, not both", said)
         self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
 
     @unittest.skipUnless(shutil.which("git"), "needs git")
     def test_git_sees_the_doc_and_its_pictures_and_nothing_else(self):
         project = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, project, True)
         git = ["git", "-c", f"core.excludesFile={os.devnull}"]
         subprocess.run(git + ["init", "-q"], cwd=project, check=True, capture_output=True)
         doc = os.path.join(project, "docs", "design.md")
         os.makedirs(os.path.dirname(doc))
         write(doc, "# Design\n")
-        code, said = self.run_render(self.spec_in_runtime(doc), "--doc", doc, "--theme", "light")
+        code, said = self.run_render(self.spec, "--doc", doc)
         self.assertEqual(0, code, said)
         status = subprocess.run(git + ["status", "--porcelain", "--untracked-files=all"], cwd=project, check=True,
                                 capture_output=True, text=True).stdout
-        self.assertEqual(["?? docs/design-diagrams/build-sequence.png", "?? docs/design-diagrams/data-flow.png",
-                          "?? docs/design.md"], sorted(status.splitlines()))
-        self.assertTrue(os.path.isfile(os.path.join(project, ".readable-diagrams", "docs", "design.md", "data-flow.svg")))
-
-    def test_where_refuses_a_doc_in_a_folder_that_is_not_there(self):
-        code, said = self.run_render("where", os.path.join(self.project, "typo", "a.md"))
-        self.assertEqual(2, code)
-        self.assertIn("there is no folder for", said)
-        self.assertFalse(os.path.exists(self.build))
-
-    def test_the_doc_folder_gets_its_pictures_and_nothing_else(self):
-        spec = self.spec_in_runtime()
-        code, said = self.run_render(spec, "--doc", self.doc, "--theme", "light")
-        self.assertEqual(0, code, said)
-        self.assertEqual(["Design Notes.md", "Design-Notes-diagrams"], sorted(os.listdir(self.docs)))
-        self.assertEqual(["build-sequence.png", "data-flow.png"], sorted(os.listdir(self.pictures)))
-        kept = sorted(os.listdir(os.path.dirname(spec)))
-        self.assertEqual(["build-sequence.mmd", "build-sequence.svg", "data-flow.mmd", "data-flow.svg", "spec.py"], kept)
-        self.assertIn("](Design-Notes-diagrams/data-flow.png)", said)
-        self.assertNotIn("<picture>", said)
+        self.assertEqual(["?? docs/design.md", "?? docs/readable-diagrams/design/build-sequence.png",
+                          "?? docs/readable-diagrams/design/data-flow.png"], sorted(status.splitlines()))
 
     def test_both_themes_give_a_picture_with_the_dark_source(self):
-        code, said = self.run_render(self.spec_in_runtime(), "--doc", self.doc, "--theme", "both")
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
         self.assertEqual(0, code, said)
         self.assertEqual(4, len(os.listdir(self.pictures)))
-        self.assertIn('srcset="Design-Notes-diagrams/data-flow-dark.png"', said)
+        self.assertIn('srcset="readable-diagrams/Design-Notes/data-flow-dark.png"', said)
+
+    def test_every_png_carries_the_spec_that_drew_it_and_its_own_mermaid_text_once(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
+        self.assertEqual(0, code, said)
+        sample = render.load_spec(self.spec)
+        mermaid = {"data-flow": sample.DATA_FLOW_MERMAID + "\n",
+                   "build-sequence": diagramlib.mermaid_sequence(sample.BUILD) + "\n"}
+        pictures = (("data-flow.png", "data-flow"), ("data-flow-dark.png", "data-flow"),
+                    ("build-sequence.png", "build-sequence"), ("build-sequence-dark.png", "build-sequence"))
+        self.assertEqual(sorted(name for name, _ in pictures), sorted(os.listdir(self.pictures)))
+        for name, stem in pictures:
+            data = read_bytes(os.path.join(self.pictures, name))
+            self.assertEqual([read(self.spec)], embed_spec.specs_in(data), name)
+            self.assertEqual([mermaid[stem]], embed_spec.mermaids_in(data), name)
+            self.assertEqual(2, [kind for kind, _ in chunks_of(data)].count(b"tEXt"), name)
+
+    def test_a_data_flow_without_mermaid_text_carries_none_and_a_sequence_carries_its_own(self):
+        example = os.path.join(SCRIPTS, "example_spec.py")
+        code, said = self.run_render(example, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        flow = read_bytes(os.path.join(self.pictures, "sync-data-flow.png"))
+        self.assertEqual([read(example)], embed_spec.specs_in(flow))
+        self.assertEqual([], embed_spec.mermaids_in(flow))
+        self.assertEqual(1, [kind for kind, _ in chunks_of(flow)].count(b"tEXt"))
+        spec = render.load_spec(example)
+        for stem, seq in (("sync-sequence-1-ask-and-answer", spec.ASK), ("sync-sequence-2-broadcast", spec.BROADCAST)):
+            data = read_bytes(os.path.join(self.pictures, f"{stem}.png"))
+            self.assertEqual([diagramlib.mermaid_sequence(seq) + "\n"], embed_spec.mermaids_in(data), stem)
+
+    def test_a_rebuild_after_a_spec_edit_carries_the_new_spec(self):
+        self.run_render(self.spec, "--doc", self.doc)
+        write(self.spec, read(self.spec) + "# edited\n")
+        code, said = self.run_render(self.spec, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        data = read_bytes(os.path.join(self.pictures, "data-flow.png"))
+        self.assertEqual([read(self.spec)], embed_spec.specs_in(data))
+        self.assertTrue(embed_spec.extract(data).endswith("# edited\n"))
+
+    def test_a_png_that_cannot_take_the_spec_stops_the_export_with_a_plain_message(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, rasterizer=fake_garbage)
+        self.assertEqual(1, code)
+        self.assertIn("cannot put the spec and the Mermaid text into the PNG:", said)
+        self.assertIn("is not a PNG this can read", said)
 
     def test_a_theme_change_removes_only_this_specs_other_theme(self):
-        spec = self.spec_in_runtime()
-        self.run_render(spec, "--doc", self.doc, "--theme", "both")
+        self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
         with open(os.path.join(self.pictures, "other-dark.png"), "wb") as handle:
             handle.write(b"not ours")
-        code, said = self.run_render(spec, "--doc", self.doc, "--theme", "light")
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "light")
         self.assertEqual(0, code, said)
         self.assertEqual(["build-sequence.png", "data-flow.png", "other-dark.png"], sorted(os.listdir(self.pictures)))
         self.assertIn("data-flow-dark.png: " + self.doc + " now shows light only", said)
 
-    def test_a_doc_without_a_theme_stops_and_asks(self):
-        code, said = self.run_render(self.spec_in_runtime(), "--doc", self.doc)
+    def test_a_theme_that_is_not_light_dark_or_both_is_refused(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "grey")
         self.assertEqual(2, code)
-        self.assertIn("--theme light, --theme dark or --theme both? Ask the user once", said)
-        self.assertFalse(os.path.exists(self.pictures))
+        self.assertIn("--theme is light, dark or both", said)
+        self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
+
+    def test_a_doc_in_a_folder_that_is_not_there_is_refused(self):
+        code, said = self.run_render(self.spec, "--doc", os.path.join(self.project, "typo", "a.md"))
+        self.assertEqual(2, code)
+        self.assertIn("there is no folder for", said)
 
     def test_a_failed_export_leaves_nothing_next_to_the_doc(self):
-        spec = self.spec_in_runtime()
-        with mock.patch.object(render, "rasterize", side_effect=FileNotFoundError), \
-                mock.patch.object(render, "doctor_report", return_value="(the report)"), \
-                contextlib.redirect_stdout(io.StringIO()):
-            code = render.main(["render.py", spec, "--doc", self.doc, "--theme", "both"])
+        with mock.patch.object(render, "doctor_report", return_value="(the report)"):
+            code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both",
+                                         rasterizer=mock.Mock(side_effect=FileNotFoundError))
         self.assertEqual(1, code)
         self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
 
@@ -389,6 +477,8 @@ class RenderPathsTest(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             calls.append((command, kwargs, os.path.isfile(command[-1]), os.path.isdir(os.path.dirname(command[-2]))))
+            with open(command[-2], "wb") as handle:
+                handle.write(tiny_png())
             return subprocess.CompletedProcess(command, 0, "", "")
 
         start = os.getcwd()
@@ -396,7 +486,7 @@ class RenderPathsTest(unittest.TestCase):
             try:
                 os.chdir(tmp)
                 with mock.patch.object(render.subprocess, "run", fake_run), contextlib.redirect_stdout(io.StringIO()):
-                    code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), "--out", "out"])
+                    code = render.main(["render.py", os.path.join(SCRIPTS, "example_spec.py"), "--out", "out", "--theme", "both"])
             finally:
                 os.chdir(start)
         self.assertEqual(0, code)
@@ -411,7 +501,7 @@ class RenderPathsTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("rsvg-convert"), "needs rsvg-convert: brew install librsvg")
     def test_rsvg_convert_draws_each_svg_as_an_1840_wide_png(self):
         with tempfile.TemporaryDirectory() as out, contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out]))
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out, "--theme", "both"]))
             pngs = sorted(n for n in os.listdir(out) if n.endswith(".png"))
             self.assertEqual(["build-sequence-dark.png", "build-sequence.png", "data-flow-dark.png", "data-flow.png"], pngs)
             for name in pngs:
@@ -419,13 +509,23 @@ class RenderPathsTest(unittest.TestCase):
             light, dark = (read_bytes(os.path.join(out, n)) for n in ("data-flow.png", "data-flow-dark.png"))
         self.assertNotEqual(light, dark)
 
-    def test_an_out_folder_inside_readable_diagrams_gets_the_gitignore_and_others_do_not(self):
-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
-            sample = os.path.join(tmp, ".readable-diagrams", "sample")
-            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", sample, "--no-png"]))
-            self.assertEqual("*", read(os.path.join(tmp, ".readable-diagrams", ".gitignore")).splitlines()[-1])
-            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", os.path.join(tmp, "out"), "--no-png"]))
-            self.assertFalse(os.path.exists(os.path.join(tmp, "out", ".gitignore")))
+    def test_out_alone_keeps_every_file_in_that_folder_and_draws_light_only(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(render, "rasterize", fake_png), \
+                contextlib.redirect_stdout(io.StringIO()):
+            out = os.path.join(tmp, "out")
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out]))
+            self.assertEqual(["build-sequence.mmd", "build-sequence.png", "build-sequence.svg", "data-flow.mmd",
+                              "data-flow.png", "data-flow.svg"], sorted(os.listdir(out)))
+
+    def test_each_png_carries_the_mermaid_text_its_mmd_file_holds(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(render, "rasterize", fake_png), \
+                contextlib.redirect_stdout(io.StringIO()):
+            out = os.path.join(tmp, "out")
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out, "--theme", "both"]))
+            for stem in ("data-flow", "build-sequence"):
+                for suffix in ("", "-dark"):
+                    data = read_bytes(os.path.join(out, f"{stem}{suffix}.png"))
+                    self.assertEqual([read(os.path.join(out, f"{stem}.mmd"))], embed_spec.mermaids_in(data))
 
     def test_loading_a_spec_leaves_no_python_cache_beside_it(self):
         with tempfile.TemporaryDirectory() as tmp:
