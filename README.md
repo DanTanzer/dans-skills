@@ -6,7 +6,7 @@ Claude Code skills by Dan Tanzer.
 
 | Skill | What it does |
 |---|---|
-| `readable-diagrams` | Draws data flow and sequence pictures as hand-laid-out SVG. Exports each as a light PNG, a dark PNG, or both. Keeps Mermaid text under each picture as a text fallback. Each PNG carries the spec that drew it, so the picture and its source travel together. |
+| `readable-diagrams` | Draws data flow and sequence pictures as hand-laid-out SVG. Exports each as a light (white) PNG by default, or as a dark PNG, or both. Keeps Mermaid text under each picture as a text fallback. Each PNG carries the spec that drew it, so the picture and its source travel together. |
 
 Before and after, for the same data flow. Click a picture for the step-by-step walkthrough.
 

@@ -1,6 +1,6 @@
 ---
 name: readable-diagrams
-description: Draws data flow and sequence pictures as hand-laid-out SVG and exports them as PNGs, light, dark or both, with Mermaid text as the fallback under each picture. Use it whenever the user asks for a diagram, a figure, a picture, a data flow, a sequence, an architecture drawing, or "how the pieces talk", and whenever a design doc, a README or a guide needs a picture. Use it even when the user says "mermaid", because plain auto-laid-out Mermaid looks generic next to a picture placed by hand; give them both.
+description: Draws data flow and sequence pictures as hand-laid-out SVG and exports them as PNGs, light (white) by default, or dark, or both, with Mermaid text as the fallback under each picture. Use it whenever the user asks for a diagram, a figure, a picture, a data flow, a sequence, an architecture drawing, or "how the pieces talk", and whenever a design doc, a README or a guide needs a picture. Use it even when the user says "mermaid", because plain auto-laid-out Mermaid looks generic next to a picture placed by hand; give them both.
 ---
 
 # readable-diagrams
