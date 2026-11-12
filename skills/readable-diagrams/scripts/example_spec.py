@@ -1,8 +1,8 @@
-"""A worked example: three diagrams of a small notes sync. To start a new set, copy this file into the doc's runtime
-folder as spec.py (SKILL.md, step 2). To build this example on its own, from your project's folder, with SKILL as
-this skill's folder:
+"""A worked example: three diagrams of a small notes sync. To start a new set, copy this file to spec.py in the
+session's scratch folder (SKILL.md, step 1). To build this example on its own, with SKILL as this skill's folder and
+SCRATCH as a temporary folder:
 
-    python3 -I SKILL/scripts/render.py SKILL/scripts/example_spec.py --out .readable-diagrams/example
+    python3 -I SKILL/scripts/render.py SKILL/scripts/example_spec.py --out SCRATCH/example --theme both
 
 A spec defines DIAGRAMS: a list of dicts with stem (the PNG name), alt (one sentence a screen reader gets, no quotes)
 and either svg (a callable that returns SVG, for a data flow drawn on a Canvas) or seq (a sequence dict).

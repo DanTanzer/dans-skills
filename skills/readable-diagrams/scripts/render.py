@@ -1,34 +1,31 @@
 """Build a diagram spec and draw its PNGs, in one command.
 
-    python3 -I render.py where DOC.md
-    python3 -I render.py SPEC.py --doc DOC.md --theme light|dark|both [--no-png]
+    python3 -I render.py SPEC.py --doc DOC.md [--theme light|dark|both] [--out DIR] [--no-png]
     python3 -I render.py SPEC.py --out DIR [--theme light|dark|both] [--no-png]
 
-where prints DOC.md's runtime folder, and makes it: .readable-diagrams/ at the root of DOC.md's git project, then
-DOC.md's own path, such as .readable-diagrams/docs/design.md/. DOC.md's spec goes there, as spec.py. The first time,
-.readable-diagrams/ gets a .gitignore that ignores everything in the folder, itself included.
+With --doc, rsvg-convert draws the PNGs that DOC.md shows into readable-diagrams/<doc name>/ next to DOC.md, such as
+docs/readable-diagrams/design/ for docs/design.md. Then the Markdown for each diagram is printed, to paste into DOC.md. The spec
+goes inside every PNG (embed_spec.py), and the PNGs are all that is kept: the SVGs and the Mermaid text are built in a
+temporary folder that goes when the command ends. The spec comes back out of any PNG with embed_spec.py extract.
 
-With --doc, every build file goes in DOC.md's runtime folder: an SVG per diagram and theme, and a .mmd where there is
-Mermaid. rsvg-convert draws only the PNGs that DOC.md shows, into <doc name>-diagrams/ next to DOC.md. Then the
-Markdown for each diagram is printed, to paste into DOC.md. --theme is required with --doc, because only the user knows
-which pictures the doc should show. Every PNG it draws also carries SPEC.py's text inside it (embed_spec.py), so a
-committed PNG keeps the spec that drew it.
-
-With --out instead, everything goes in DIR, in both themes unless --theme says otherwise. --no-png stops after the
-SVGs, for a quick check. Exit 1 with a plain message when a label does not fit or the export fails, 2 for a usage
-mistake.
+--theme is light (white) unless it says dark or both. --out DIR keeps the build files in DIR: an SVG per diagram and
+theme, and a .mmd where there is Mermaid. Without --doc, --out also holds the PNGs. --no-png stops after the SVGs, for
+a quick check of the text widths. Exit 1 with a plain message when a label does not fit or the export fails, 2 for a
+usage mistake.
 """
 import importlib.util
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 sys.dont_write_bytecode = True  # loading a spec leaves no __pycache__ folder beside it, or beside diagramlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUNTIME_NAME = ".readable-diagrams"
-IGNORE_EVERYTHING = "# The readable-diagrams skill makes everything in this folder. None of it belongs in git.\n*\n"
+DIAGRAMS_DIR = "readable-diagrams"
+DEFAULT_THEME = "light"
 sys.path.insert(0, HERE)
 import diagramlib  # noqa: E402
 import embed_spec  # noqa: E402
@@ -47,41 +44,10 @@ def has_folder(doc):
     return os.path.isdir(os.path.dirname(os.path.abspath(doc)))
 
 
-def project_root(doc):
-    """The root of the git project that holds the doc: the nearest folder at or above the doc's that holds .git, a
-    folder in a clone and a file in a worktree. A doc outside git gets its own folder."""
-    here = os.path.dirname(os.path.abspath(doc))
-    folder = here
-    while not os.path.exists(os.path.join(folder, ".git")):
-        parent = os.path.dirname(folder)
-        if parent == folder:
-            return here
-        folder = parent
-    return folder
-
-
-def runtime_folder(doc):
-    """The doc's own folder for build files: .readable-diagrams/ at the project root, then the doc's path from there.
-    docs/design.md builds in .readable-diagrams/docs/design.md/, so two docs never share a spec."""
-    root = project_root(doc)
-    return os.path.join(root, RUNTIME_NAME, os.path.relpath(os.path.abspath(doc), root))
-
-
 def diagrams_folder(doc):
-    """Where the PNGs that a doc shows go: <doc name>-diagrams, next to the doc."""
-    return os.path.join(os.path.dirname(doc), f"{doc_name(doc)}-diagrams")
-
-
-def make_folder(path):
-    """Make path. Inside a .readable-diagrams folder, also give that folder a .gitignore that ignores everything in it,
-    itself included, so the build files stay out of git and the project's own .gitignore stays as it is."""
-    os.makedirs(path, exist_ok=True)
-    parts = os.path.abspath(path).split(os.sep)
-    if RUNTIME_NAME in parts:
-        ignore = os.path.join(os.sep.join(parts[:parts.index(RUNTIME_NAME) + 1]), ".gitignore")
-        if not os.path.exists(ignore):
-            with open(ignore, "w", encoding="utf-8") as handle:
-                handle.write(IGNORE_EVERYTHING)
+    """Where the PNGs that a doc shows go: readable-diagrams/<doc name>/, next to the doc. Two docs in one folder share
+    readable-diagrams/ and each keeps its pictures together in its own subfolder."""
+    return os.path.join(os.path.dirname(doc), DIAGRAMS_DIR, doc_name(doc))
 
 
 def rasterize(svg, png):
@@ -105,8 +71,7 @@ def stop_with_doctor(reason):
 
 
 def cannot_make(folder, err):
-    print(f"cannot make {folder}: {err.strerror or err}. Ask the user where the build files may go, and pass that "
-          "folder as --out.")
+    print(f"cannot make {folder}: {err.strerror or err}.")
     return 1
 
 
@@ -121,7 +86,7 @@ def load_spec(path):
 def parse(args):
     """SPEC.py, then --doc DOC.md, --out DIR, --theme THEME and --no-png, in any order. Returns (options, None), or
     (None, what is wrong)."""
-    opts = {"spec": None, "doc": None, "out": None, "theme": None, "png": True}
+    opts = {"spec": None, "doc": None, "out": None, "theme": DEFAULT_THEME, "png": True}
     rest = list(args)
     while rest:
         word = rest.pop(0)
@@ -137,11 +102,8 @@ def parse(args):
             opts["spec"] = word
     if not opts["spec"]:
         return None, "name the spec first: render.py SPEC.py ..."
-    if opts["theme"] is not None and opts["theme"] not in THEMES:
+    if opts["theme"] not in THEMES:
         return None, f"--theme is light, dark or both, not {opts['theme']!r}"
-    if opts["doc"] and not opts["theme"]:
-        return None, (f"which pictures should {opts['doc']} show: --theme light, --theme dark or --theme both? "
-                      "Ask the user once, then run this again with the answer.")
     if not opts["doc"] and not opts["out"]:
         return None, "say where the files go: --doc DOC.md, or --out DIR"
     if opts["doc"] and not has_folder(opts["doc"]):
@@ -149,29 +111,21 @@ def parse(args):
     return opts, None
 
 
-def where(args):
-    """render.py where DOC.md: print DOC.md's runtime folder, and make it."""
-    if len(args) != 1:
-        print("usage: render.py where DOC.md")
-        return 2
-    if not has_folder(args[0]):
-        print(f"render.py: there is no folder for {args[0]}")
-        return 2
-    folder = runtime_folder(args[0])
-    try:
-        make_folder(folder)
-    except OSError as err:
-        return cannot_make(folder, err)
-    print(folder)
-    return 0
+def make_png_folders(png_dir):
+    """Make png_dir, and the folder above it when that is not there yet. Returns the folders this call made."""
+    made = []
+    for folder in (os.path.dirname(png_dir), png_dir):
+        if folder and not os.path.isdir(folder):
+            os.mkdir(folder)
+            made.append(folder)
+    return made
 
 
 def draw_pngs(diagrams, png_dir, spec_text):
-    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir, and each PNG takes spec_text as its spec. When this
-    call made png_dir and the export fails before a PNG is in it, the empty folder goes again, so a failed export
-    leaves nothing next to the doc."""
-    made = not os.path.isdir(png_dir)
-    os.makedirs(png_dir, exist_ok=True)
+    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir, and each PNG takes spec_text as its spec. A folder
+    this call made goes again when the export fails before a PNG is in it, so a failed export leaves nothing next to
+    the doc."""
+    made = make_png_folders(png_dir)
     try:
         for f in diagrams:
             for theme, svg in f["files"].items():
@@ -190,8 +144,9 @@ def draw_pngs(diagrams, png_dir, spec_text):
                     return 1
         return 0
     finally:
-        if made and not os.listdir(png_dir):
-            os.rmdir(png_dir)
+        for folder in reversed(made):
+            if not os.listdir(folder):
+                os.rmdir(folder)
 
 
 def drop_other_theme(diagrams, png_dir, themes):
@@ -206,39 +161,27 @@ def drop_other_theme(diagrams, png_dir, themes):
     return gone
 
 
-def print_blocks(diagrams, doc, png_dir, themes):
-    folder = os.path.basename(png_dir)
+def print_blocks(diagrams, doc, themes):
+    folder = f"{DIAGRAMS_DIR}/{doc_name(doc)}"
     print(f"\nThe Markdown for {doc}, one block per diagram. Paste each block where its picture goes:")
     for f in diagrams:
         block = diagramlib.picture_block(f["stem"], f["alt"], folder, f["mermaid"], themes)
         print(f"\n{f['stem']}:\n{block}", end="")
 
 
-def main(argv):
-    if len(argv) < 2:
-        print(__doc__)
-        return 2
-    if argv[1] == "where":
-        return where(argv[2:])
-    opts, mistake = parse(argv[1:])
-    if mistake:
-        print(f"render.py: {mistake}")
-        return 2
-    doc, themes = opts["doc"], THEMES[opts["theme"] or "both"]
-    out = opts["out"] or runtime_folder(doc)
+def build(opts, work):
+    """Build the spec's SVGs in work, then draw the PNGs, mark each with the spec, and print the Markdown."""
+    doc, themes = opts["doc"], THEMES[opts["theme"]]
     try:
-        make_folder(out)
-    except OSError as err:
-        return cannot_make(out, err)
-    try:
-        diagrams = diagramlib.build(load_spec(opts["spec"]), out, themes)
+        diagrams = diagramlib.build(load_spec(opts["spec"]), work, themes)
     except diagramlib.DiagramError as err:
         print(f"diagram error: {err}")
         return 1
-    print(f"built {len(diagrams)} diagram(s) in {out}: " + ", ".join(f["stem"] for f in diagrams))
+    kept = f" in {work}" if opts["out"] else ""
+    print(f"built {len(diagrams)} diagram(s){kept}: " + ", ".join(f["stem"] for f in diagrams))
     if not opts["png"]:
         return 0
-    png_dir = diagrams_folder(doc) if doc else out
+    png_dir = diagrams_folder(doc) if doc else work
     failed = draw_pngs(diagrams, png_dir, embed_spec.read_text(opts["spec"]))
     if failed:
         return failed
@@ -247,8 +190,30 @@ def main(argv):
     if doc:
         for path in drop_other_theme(diagrams, png_dir, themes):
             print(f"removed {path}: {doc} now shows {words} only")
-        print_blocks(diagrams, doc, png_dir, themes)
+        print_blocks(diagrams, doc, themes)
     return 0
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    opts, mistake = parse(argv[1:])
+    if mistake:
+        print(f"render.py: {mistake}")
+        return 2
+    keep = opts["out"]
+    if keep:
+        try:
+            os.makedirs(keep, exist_ok=True)
+        except OSError as err:
+            return cannot_make(keep, err)
+    work = keep or tempfile.mkdtemp(prefix="readable-diagrams-")
+    try:
+        return build(opts, work)
+    finally:
+        if not keep:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":

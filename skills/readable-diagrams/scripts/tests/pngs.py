@@ -1,5 +1,5 @@
-"""A PNG small enough to build by hand, for the tests that need a file that really is a PNG. Built apart from embed_spec,
-so a mistake there cannot hide in the tests' own files."""
+"""A PNG small enough to build by hand, for the tests that need a file that really is a PNG. Built apart from
+embed_spec, so a mistake there cannot hide in the tests' own files."""
 import struct
 import zlib
 
@@ -15,7 +15,8 @@ def tiny_png(*extra):
     """A valid 2 x 2 grey PNG: IHDR, one IDAT, any extra chunks given as bytes, then IEND."""
     header = struct.pack(">IIBBBBB", 2, 2, 8, 0, 0, 0, 0)
     pixels = zlib.compress(b"\x00\x10\x20" + b"\x00\x30\x40")
-    return SIGNATURE + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", pixels) + b"".join(extra) + png_chunk(b"IEND", b"")
+    body = png_chunk(b"IHDR", header) + png_chunk(b"IDAT", pixels) + b"".join(extra)
+    return SIGNATURE + body + png_chunk(b"IEND", b"")
 
 
 def chunks_of(png):

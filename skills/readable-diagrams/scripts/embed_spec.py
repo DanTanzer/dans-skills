@@ -1,15 +1,15 @@
 """Keep a diagram's spec inside the PNG it drew.
 
-The spec that draws a doc's pictures stays in .readable-diagrams/, which git ignores, so the Python behind a shipped PNG
-is not in the repo. This puts the spec's text into the PNG itself, as a PNG tEXt chunk named readable-diagrams-spec: the
-way image tools carry their settings. Commit the PNG and its spec comes with it. No pixel changes: one chunk goes in
-just before IEND, and the image draws the same before and after.
+The spec that draws a doc's pictures is a scratch file, so the Python behind a shipped PNG would be lost with it. This
+puts the spec's text into the PNG itself, as a PNG tEXt chunk named readable-diagrams-spec: the way image tools carry
+their settings. Commit the PNG and its spec comes with it. No pixel changes: one chunk goes in just before IEND, and the
+image draws the same before and after.
 
     python3 -I embed_spec.py embed DIAGRAM.png SPEC.py    put SPEC.py in DIAGRAM.png, in place
-    python3 -I embed_spec.py extract DIAGRAM.png          print the spec, byte for byte: ... extract DIAGRAM.png > spec.py
+    python3 -I embed_spec.py extract DIAGRAM.png          print the spec, byte for byte; send it to a file
 
 render.py runs embed for every PNG it draws, so a rebuilt picture carries the spec that drew it. Run embed yourself for
-a picture drawn before. Run extract to get a spec back when the runtime folder is gone.
+a picture drawn before. Run extract to get a spec back: the PNG holds the only copy.
 
 Embed reads before it writes, and a PNG never holds two specs. A PNG that already holds exactly this spec, once, is not
 written at all. One that holds a different spec gets the new one in its place. One that holds two or more ends with one.

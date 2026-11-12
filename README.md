@@ -73,7 +73,7 @@ Before the first export, Claude runs the skill's `scripts/doctor.sh` to check th
 
 ## Try it
 
-Ask Claude in your own words. Claude asks whether the doc should show light pictures, dark ones, or both. The pictures go in a folder next to the doc, named after it. Claude keeps its working files in `.readable-diagrams/` at the root of your project, and that folder keeps itself out of git.
+Ask Claude in your own words. The pictures are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each picture carries the spec that drew it, and Claude keeps no other copy of it on your laptop.
 
 To draw the sample that comes with the skill:
 
