@@ -1,6 +1,7 @@
 """diagramlib builds the example, every SVG is well-formed and complete on its own, every label fits, boxes get the exact
 height their text needs, the doctor names rsvg-convert, a doc gets its pictures in readable-diagrams/<doc name>/ with the spec
-inside each one and keeps no build file, and the Markdown block has the right shape for one theme or both."""
+and the Mermaid text inside each one and keeps no build file, and the Markdown block has the right shape for one theme
+or both."""
 import contextlib
 import io
 import os
@@ -252,7 +253,8 @@ class ThemeChoiceTest(unittest.TestCase):
 
 class DocFolderTest(unittest.TestCase):
     """A doc gets its pictures in readable-diagrams/<doc name>/ next to it, light unless the user asked for more, each picture
-    carrying its spec once. Nothing else is kept: the build files go in a temporary folder that is removed."""
+    carrying its spec and its own Mermaid text once. Nothing else is kept: the build files go in a temporary folder that
+    is removed."""
 
     def setUp(self):
         self.project = tempfile.mkdtemp()
@@ -373,15 +375,33 @@ class DocFolderTest(unittest.TestCase):
         self.assertEqual(4, len(os.listdir(self.pictures)))
         self.assertIn('srcset="readable-diagrams/Design-Notes/data-flow-dark.png"', said)
 
-    def test_every_png_carries_the_spec_that_drew_it_once(self):
+    def test_every_png_carries_the_spec_that_drew_it_and_its_own_mermaid_text_once(self):
         code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
         self.assertEqual(0, code, said)
-        pictures = sorted(os.listdir(self.pictures))
-        self.assertEqual(4, len(pictures))
-        for name in pictures:
+        sample = render.load_spec(self.spec)
+        mermaid = {"data-flow": sample.DATA_FLOW_MERMAID + "\n",
+                   "build-sequence": diagramlib.mermaid_sequence(sample.BUILD) + "\n"}
+        pictures = (("data-flow.png", "data-flow"), ("data-flow-dark.png", "data-flow"),
+                    ("build-sequence.png", "build-sequence"), ("build-sequence-dark.png", "build-sequence"))
+        self.assertEqual(sorted(name for name, _ in pictures), sorted(os.listdir(self.pictures)))
+        for name, stem in pictures:
             data = read_bytes(os.path.join(self.pictures, name))
             self.assertEqual([read(self.spec)], embed_spec.specs_in(data), name)
-            self.assertEqual(1, [kind for kind, _ in chunks_of(data)].count(b"tEXt"), name)
+            self.assertEqual([mermaid[stem]], embed_spec.mermaids_in(data), name)
+            self.assertEqual(2, [kind for kind, _ in chunks_of(data)].count(b"tEXt"), name)
+
+    def test_a_data_flow_without_mermaid_text_carries_none_and_a_sequence_carries_its_own(self):
+        example = os.path.join(SCRIPTS, "example_spec.py")
+        code, said = self.run_render(example, "--doc", self.doc)
+        self.assertEqual(0, code, said)
+        flow = read_bytes(os.path.join(self.pictures, "sync-data-flow.png"))
+        self.assertEqual([read(example)], embed_spec.specs_in(flow))
+        self.assertEqual([], embed_spec.mermaids_in(flow))
+        self.assertEqual(1, [kind for kind, _ in chunks_of(flow)].count(b"tEXt"))
+        spec = render.load_spec(example)
+        for stem, seq in (("sync-sequence-1-ask-and-answer", spec.ASK), ("sync-sequence-2-broadcast", spec.BROADCAST)):
+            data = read_bytes(os.path.join(self.pictures, f"{stem}.png"))
+            self.assertEqual([diagramlib.mermaid_sequence(seq) + "\n"], embed_spec.mermaids_in(data), stem)
 
     def test_a_rebuild_after_a_spec_edit_carries_the_new_spec(self):
         self.run_render(self.spec, "--doc", self.doc)
@@ -395,7 +415,7 @@ class DocFolderTest(unittest.TestCase):
     def test_a_png_that_cannot_take_the_spec_stops_the_export_with_a_plain_message(self):
         code, said = self.run_render(self.spec, "--doc", self.doc, rasterizer=fake_garbage)
         self.assertEqual(1, code)
-        self.assertIn("cannot put the spec into the PNG:", said)
+        self.assertIn("cannot put the spec and the Mermaid text into the PNG:", said)
         self.assertIn("is not a PNG this can read", said)
 
     def test_a_theme_change_removes_only_this_specs_other_theme(self):
@@ -496,6 +516,16 @@ class RenderPathsTest(unittest.TestCase):
             self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out]))
             self.assertEqual(["build-sequence.mmd", "build-sequence.png", "build-sequence.svg", "data-flow.mmd",
                               "data-flow.png", "data-flow.svg"], sorted(os.listdir(out)))
+
+    def test_each_png_carries_the_mermaid_text_its_mmd_file_holds(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(render, "rasterize", fake_png), \
+                contextlib.redirect_stdout(io.StringIO()):
+            out = os.path.join(tmp, "out")
+            self.assertEqual(0, render.main(["render.py", SAMPLE, "--out", out, "--theme", "both"]))
+            for stem in ("data-flow", "build-sequence"):
+                for suffix in ("", "-dark"):
+                    data = read_bytes(os.path.join(out, f"{stem}{suffix}.png"))
+                    self.assertEqual([read(os.path.join(out, f"{stem}.mmd"))], embed_spec.mermaids_in(data))
 
     def test_loading_a_spec_leaves_no_python_cache_beside_it(self):
         with tempfile.TemporaryDirectory() as tmp:

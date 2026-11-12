@@ -5,10 +5,10 @@
 
 With --doc, rsvg-convert draws the PNGs that DOC.md shows into readable-diagrams/<doc name>/ next to DOC.md, such as
 docs/readable-diagrams/design/ for docs/design.md. Then the Markdown for each diagram is printed, to paste into DOC.md.
-The spec goes inside every PNG (embed_spec.py), and the PNGs are all that is kept: the SVGs and the Mermaid text are
-built in a temporary folder that goes when the command ends. The spec comes back out of any PNG with embed_spec.py
-extract. --keep-svg, off unless given, also keeps each SVG beside its PNG, and a build without it removes the SVGs an
-earlier build kept, so a kept SVG never goes stale.
+The spec and the picture's Mermaid text go inside every PNG (embed_spec.py), and the PNGs are all that is kept: the SVGs
+and the .mmd files are built in a temporary folder that goes when the command ends. Both come back out of any PNG with
+embed_spec.py extract. --keep-svg, off unless given, also keeps each SVG beside its PNG, and a build without it removes
+the SVGs an earlier build kept, so a kept SVG never goes stale.
 
 --theme is light (white) unless it says dark or both. --out DIR is for a build without a doc: every file stays in DIR,
 an SVG per diagram and theme, a .mmd where there is Mermaid, and the PNGs. --no-png stops after the SVGs, for a quick
@@ -128,9 +128,9 @@ def make_png_folders(png_dir):
 
 
 def draw_pngs(diagrams, png_dir, spec_text):
-    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir, and each PNG takes spec_text as its spec. A folder
-    this call made goes again when the export fails before a PNG is in it, so a failed export leaves nothing next to
-    the doc."""
+    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir, and each PNG takes spec_text as its spec and its own
+    diagram's Mermaid text, when it has any. A folder this call made goes again when the export fails before a PNG is
+    in it, so a failed export leaves nothing next to the doc."""
     made = make_png_folders(png_dir)
     try:
         for f in diagrams:
@@ -144,9 +144,9 @@ def draw_pngs(diagrams, png_dir, spec_text):
                     print(f"rsvg-convert could not draw {svg}:\n{done.stderr.strip()[-2000:]}")
                     return 1
                 try:
-                    embed_spec.embed_file(png, spec_text)
+                    embed_spec.embed_file(png, spec_text, diagramlib.mmd_text(f["mermaid"]))
                 except (OSError, embed_spec.PngError) as err:
-                    print(f"cannot put the spec into the PNG: {embed_spec.why(err)}")
+                    print(f"cannot put the spec and the Mermaid text into the PNG: {embed_spec.why(err)}")
                     return 1
         return 0
     finally:
@@ -186,7 +186,8 @@ def print_blocks(diagrams, doc, themes):
 
 
 def build(opts, work):
-    """Build the spec's SVGs in work, then draw the PNGs, mark each with the spec, and print the Markdown."""
+    """Build the spec's SVGs in work, then draw the PNGs, put the spec and the Mermaid text in each, and print the
+    Markdown."""
     doc, themes = opts["doc"], THEMES[opts["theme"]]
     try:
         diagrams = diagramlib.build(load_spec(opts["spec"]), work, themes)

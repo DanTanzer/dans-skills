@@ -17,7 +17,8 @@ W = 260
 
 DATA_FLOW_ALT = ("Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG "
                  "for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in "
-                 "readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.")
+                 "readable-diagrams/design next to design.md with the spec and the Mermaid text inside, and Claude looks "
+                 "at each PNG.")
 
 DATA_FLOW_MERMAID = """flowchart LR
   you(["You"])
@@ -26,7 +27,7 @@ DATA_FLOW_MERMAID = """flowchart LR
     spec -->|reads| render["render.py + diagramlib"]
     render -->|writes| build[("a temporary folder: an .svg per theme, .mmd")]
     build -->|reads| exporter["rsvg-convert"]
-    exporter -->|writes| pngs[("readable-diagrams/design/: the PNGs design.md shows, spec inside")]
+    exporter -->|writes| pngs[("readable-diagrams/design/: the PNGs design.md shows, spec and Mermaid inside")]
     pngs -->|looks at each| claude
   end
   you -->|words| claude
@@ -49,7 +50,7 @@ def data_flow():
     c.arrow(830, ROW_A + 72, 830, ROW_B, "file").label(840, ROW_A + 126, "writes")
     c.store(COLS[2], ROW_B, W, 72, "a temporary folder", "an .svg per theme, and .mmd")
     c.box(COLS[1], ROW_B, W, 72, "rsvg-convert", [("librsvg: one PNG per SVG", "ts")])
-    c.store(COLS[0], ROW_B, W, 72, "readable-diagrams/design/", "the PNGs, spec inside")
+    c.store(COLS[0], ROW_B, W, 72, "readable-diagrams/design/", "the PNGs, spec + Mermaid inside")
     c.arrow(COLS[2], ROW_B + 36, COLS[1] + W, ROW_B + 36, "file").label(665, ROW_B + 28, "reads", "middle")
     c.arrow(COLS[1], ROW_B + 36, COLS[0] + W, ROW_B + 36, "file").label(335, ROW_B + 28, "writes", "middle")
     # and back up the left side: Claude looks at every picture before it goes in a document
@@ -65,8 +66,8 @@ BUILD = {
     "id": "build", "title": "One build, in order", "lifelines": LIFELINES,
     "caption": "Claude writes the spec in its scratch folder and runs render.py. render.py draws an SVG for each "
                "diagram, then runs rsvg-convert once for each, which writes the PNG into readable-diagrams/design next to the "
-               "doc. render.py puts the spec inside each PNG and removes its temporary files. Claude looks at each "
-               "PNG, then pastes the Markdown into the doc.",
+               "doc. render.py puts the spec and the Mermaid text inside each PNG and removes its temporary files. "
+               "Claude looks at each PNG, then pastes the Markdown into the doc.",
     "rows": [
         ("msg", "U", "C", "\"draw how the parts talk\"", "say"),
         ("msg", "C", "F", "writes design.spec.py in its scratch folder", "file"),
@@ -77,7 +78,7 @@ BUILD = {
         ("msg", "R", "X", "rsvg-convert, once per svg", "say"),
         ("note", "X", ["at twice the size: 920", "units become 1840 pixels"]),
         ("msg", "X", "F", "reads an svg, writes its PNG", "file"),
-        ("msg", "R", "F", "puts the spec inside each PNG", "file"),
+        ("msg", "R", "F", "puts spec + Mermaid in PNGs", "file"),
         ("msg", "R", "F", "removes the temporary files", "file"),
         ("msg", "R", "C", "2 PNGs, the Markdown", "say"),
         ("msg", "C", "F", "looks at each PNG once", "file"),

@@ -34,11 +34,11 @@ dans-skills/                             repository, marketplace and plugin "dan
             ├── diagramlib.py            the drawing library: hand-laid-out SVG in one house style
             ├── render.py                one command: builds a spec, draws its PNGs with rsvg-convert, prints the Markdown
             ├── example_spec.py          a worked example with three diagrams; copy it to start a set
-            ├── embed_spec.py            puts a spec inside a PNG as a text chunk, and gets it back
+            ├── embed_spec.py            puts a spec and its Mermaid text inside a PNG as text chunks, and gets them back
             ├── doctor.sh                checks the Mac: Python, rsvg-convert and the fonts
             └── tests/
                 ├── test_diagramlib.py   checks the example and the sample build, and the text checks refuse what they should
-                ├── test_embed_spec.py   checks the spec goes into a PNG once and comes back byte for byte
+                ├── test_embed_spec.py   checks the spec and Mermaid text go into a PNG once and come back byte for byte
                 └── pngs.py              a PNG small enough to build by hand, for the tests
 ```
 

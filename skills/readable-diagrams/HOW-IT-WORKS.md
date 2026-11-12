@@ -32,7 +32,7 @@ The data flow:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/data-flow-dark.png">
-  <img src="sample/diagrams/data-flow.png" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.">
+  <img src="sample/diagrams/data-flow.png" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec and the Mermaid text inside, and Claude looks at each PNG.">
 </picture>
 
 <details>
@@ -46,7 +46,7 @@ flowchart LR
     spec -->|reads| render["render.py + diagramlib"]
     render -->|writes| build[("a temporary folder: an .svg per theme, .mmd")]
     build -->|reads| exporter["rsvg-convert"]
-    exporter -->|writes| pngs[("readable-diagrams/design/: the PNGs design.md shows, spec inside")]
+    exporter -->|writes| pngs[("readable-diagrams/design/: the PNGs design.md shows, spec and Mermaid inside")]
     pngs -->|looks at each| claude
   end
   you -->|words| claude
@@ -59,7 +59,7 @@ The sequence, which is the whole build in order:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/build-sequence-dark.png">
-  <img src="sample/diagrams/build-sequence.png" alt="One build, in order. Claude writes the spec in its scratch folder and runs render.py. render.py draws an SVG for each diagram, then runs rsvg-convert once for each, which writes the PNG into readable-diagrams/design next to the doc. render.py puts the spec inside each PNG and removes its temporary files. Claude looks at each PNG, then pastes the Markdown into the doc.">
+  <img src="sample/diagrams/build-sequence.png" alt="One build, in order. Claude writes the spec in its scratch folder and runs render.py. render.py draws an SVG for each diagram, then runs rsvg-convert once for each, which writes the PNG into readable-diagrams/design next to the doc. render.py puts the spec and the Mermaid text inside each PNG and removes its temporary files. Claude looks at each PNG, then pastes the Markdown into the doc.">
 </picture>
 
 <details>
@@ -81,7 +81,7 @@ sequenceDiagram
   R->>X: rsvg-convert, once per svg
   Note over X: at twice the size: 920<br/>units become 1840 pixels
   X->>F: reads an svg, writes its PNG
-  R->>F: puts the spec inside each PNG
+  R->>F: puts spec + Mermaid in PNGs
   R->>F: removes the temporary files
   R->>C: 2 PNGs, the Markdown
   C->>F: looks at each PNG once
@@ -96,10 +96,10 @@ Every box, arrow and label sits where Claude put it. The legend inside each pict
 
 1. Claude writes a small Python file, the spec, in its scratch folder, outside your project. In a data flow, the spec places every box, arrow and label by hand. In a sequence, the spec lists the messages in order, and the code places them.
 2. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `diagramlib.py`. It checks that the text in boxes and sequences fits, and that each box is tall enough for its text. It writes one SVG per diagram and theme, each complete on its own, in a temporary folder.
-3. `rsvg-convert` draws each SVG as a PNG, at twice its size, into a subfolder next to the doc: `readable-diagrams/design/` for `design.md`. The picture is light (white) unless you ask for dark or both. `render.py` then puts the spec inside each PNG, so the picture carries its own source, and removes the temporary folder.
+3. `rsvg-convert` draws each SVG as a PNG, at twice its size, into a subfolder next to the doc: `readable-diagrams/design/` for `design.md`. The picture is light (white) unless you ask for dark or both. `render.py` then puts the spec and the Mermaid text inside each PNG, so the picture carries its own source, and removes the temporary folder.
 4. Claude looks at every picture. Then Claude pastes the Markdown that `render.py` prints into the doc, with the Mermaid text folded underneath.
 
-In your repo, only the doc and its `readable-diagrams/<doc name>/` folder change. No build file and no copy of the spec stays on the laptop. A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
+In your repo, only the doc and its `readable-diagrams/<doc name>/` folder change. No build file and no copy of the spec or the Mermaid text stays on the laptop. A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
 
 ## Step by step, with the sample
 
@@ -107,7 +107,7 @@ The sample in this folder builds the skill's two pictures above: the data flow a
 
 | Path | What it is |
 |---|---|
-| `sample/spec.py` | The input: two diagrams, in 91 lines of Python |
+| `sample/spec.py` | The input: two diagrams, in 92 lines of Python |
 | `sample/diagrams/` | The pictures, copied from the sample's build folder, plus Mermaid's drawings of both, for comparison |
 
 ### Step 1: Claude writes the spec
@@ -200,7 +200,7 @@ For a doc, Claude runs one command. `SKILL` stands for the skill's folder, and `
 python3 -I SKILL/scripts/render.py SCRATCH/design.spec.py --doc docs/design.md
 ```
 
-With `--doc`, the PNGs go next to the doc, in `docs/readable-diagrams/design/`: a `readable-diagrams` folder with one subfolder for each doc, so two docs in one folder keep their pictures apart and each doc's pictures stay together. The SVG and Mermaid files are built in a temporary folder that `render.py` removes when it ends, and the spec goes inside each PNG, so no copy of the spec stays on the laptop. To change a picture later, Claude takes the spec out of one of its PNGs with `embed_spec.py extract` and builds again.
+With `--doc`, the PNGs go next to the doc, in `docs/readable-diagrams/design/`: a `readable-diagrams` folder with one subfolder for each doc, so two docs in one folder keep their pictures apart and each doc's pictures stay together. The SVG and Mermaid files are built in a temporary folder that `render.py` removes when it ends, and the spec and the Mermaid text go inside each PNG, so no copy of either stays on the laptop. To change a picture later, Claude takes the spec out of one of its PNGs with `embed_spec.py extract` and builds again.
 
 `--theme` is light, the white picture, unless it says `dark` or `both`. Claude does not ask which one to make. `--keep-svg` is off unless given. With it, each SVG stays beside its PNG in `docs/readable-diagrams/design/`, under the same name, and a build without it removes the SVGs an earlier build kept, so a kept SVG never goes stale.
 
@@ -212,7 +212,7 @@ Steps 3 to 5, and the Markdown for step 7, all come from this one `render.py` co
 
 1. It loads the spec file as a Python module, without writing a `__pycache__` folder next to it.
 2. It calls `diagramlib.build`, which writes an SVG file per diagram and theme, and the Mermaid files, in a temporary folder (steps 3 and 4).
-3. It runs `rsvg-convert` once for each SVG file, and puts the spec inside each PNG (step 5). If `rsvg-convert` fails on a file, the build stops and prints `rsvg-convert`'s own error.
+3. It runs `rsvg-convert` once for each SVG file, and puts the spec and the Mermaid text inside each PNG (step 5). If `rsvg-convert` fails on a file, the build stops and prints `rsvg-convert`'s own error.
 4. With `--doc`, it removes the doc's PNGs in a theme the doc no longer shows, then prints the Markdown for each diagram (step 7). When it ends, it removes the temporary folder.
 
 When `rsvg-convert` is not installed, `render.py` catches the error and runs `doctor.sh`. It prints the doctor's report: the same lines the doctor prints on its own. A failed export leaves no empty folder next to the doc.
@@ -252,9 +252,9 @@ The fix is fewer words or a wider box, never a smaller font.
 
 Two kinds of text skip the check. The first is a word placed with `label()`, such as every arrow word in the data flow. The second is a zone subtitle. diagramlib cannot know how much room a free word has. The look in step 6 is their only check.
 
-diagramlib also writes the sequence as Mermaid text, in `build-sequence.mmd`, in the build folder. That text is the closed block under the sequence picture above.
+diagramlib also writes the sequence as Mermaid text, in `build-sequence.mmd`, in the build folder. That text is the closed block under the sequence picture above, and the copy that goes inside each of the sequence's PNGs (step 5).
 
-A data flow gets a Mermaid file only when the spec gives one. diagramlib cannot write one itself. A canvas holds only shapes at positions, so it does not know which box an arrow joins. The sample gives its Mermaid text by hand, under the `"mermaid"` key.
+A data flow gets a Mermaid file only when the spec gives one. diagramlib cannot write one itself. A canvas holds only shapes at positions, so it does not know which box an arrow joins. The sample gives its Mermaid text by hand, under the `"mermaid"` key. A data flow without it has no `.mmd` file, and its PNGs carry only the spec.
 
 ### Step 4: each diagram becomes an SVG file per theme
 
@@ -296,15 +296,15 @@ The light file becomes `<stem>.png`, and the dark file becomes `<stem>-dark.png`
 | `data-flow.png` | 1840 × 846 |
 | `build-sequence.png` | 1840 × 1450 |
 
-Then `render.py` puts the spec inside each PNG. The spec's text goes in as a PNG text chunk named `readable-diagrams-spec`, just before the end of the file. The pixels do not change, and the picture draws the same. The file grows by the size of the spec, a few kilobytes.
+Then `render.py` puts two parts inside each PNG, as PNG text chunks just before the end of the file: the spec's Python, in a chunk named `readable-diagrams-spec`, and the Mermaid text of that picture, in a chunk named `readable-diagrams-mermaid`. A data flow whose spec gives no Mermaid text gets only the first. The pixels do not change, and the picture draws the same. The file grows by the size of the two texts, a few kilobytes. The image is the whole wrapper: it alone gives back the editable text and the code that drew it.
 
-`embed_spec.py` reads the PNG before it writes. A PNG that already holds exactly this spec is not written at all. One that holds a different spec gets the new one in its place. A PNG never holds two. To get a spec back, which is how Claude starts a change to pictures that exist:
+`embed_spec.py` reads the PNG before it writes. A PNG that already holds exactly these parts, once each, is not written at all. A part that differs is replaced on its own, and a Mermaid part that the call leaves out is removed, so the two parts always belong together. A PNG never holds two of one part. To get the parts back, which is how Claude starts a change to pictures that exist:
 
 ```bash
 python3 -I scripts/embed_spec.py extract docs/readable-diagrams/design/data-flow.png SCRATCH
 ```
 
-That writes `SCRATCH/data-flow.spec.py`, named after the picture, so pictures that share a folder never share a spec file. `extract` reads before it writes too: a file that already holds the spec is left alone, and a file that holds something else stops the extract, so edits in it are never lost.
+That writes `SCRATCH/data-flow.spec.py` and, because this picture holds Mermaid text, `SCRATCH/data-flow.mmd`. Both are named after the picture, so pictures that share a folder never share a file. `extract` reads before it writes too: a file that already holds the text is left alone, and a file that holds something else stops the extract before any file is written, so edits in it are never lost.
 
 ### Step 6: Claude looks at every PNG once
 
@@ -337,12 +337,12 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 | `HOW-IT-WORKS.md` | Markdown | This page |
 | `.gitignore` | git settings | Keeps Python caches out of git, so a copied skill folder stays clean |
 | `scripts/diagramlib.py` | Python, standard library only | The canvas, sequences, text checks, box heights, style sheet, legend card, Mermaid text and picture block |
-| `scripts/render.py` | Python | One command: a build writes the SVGs and the Mermaid text in a temporary folder, draws each PNG with `rsvg-convert` into `readable-diagrams/<doc name>/`, puts the spec inside it, prints the Markdown and removes the temporary folder |
-| `scripts/embed_spec.py` | Python, standard library only | Puts a spec inside a PNG as a `tEXt` chunk and gets it back. `embed` reads the PNG before it writes, and a PNG never holds two specs. `extract` prints the spec byte for byte |
+| `scripts/render.py` | Python | One command: a build writes the SVGs and the Mermaid text in a temporary folder, draws each PNG with `rsvg-convert` into `readable-diagrams/<doc name>/`, puts the spec and the Mermaid text inside it, prints the Markdown and removes the temporary folder |
+| `scripts/embed_spec.py` | Python, standard library only | Puts a picture's two parts, the spec's Python and its Mermaid text, inside a PNG as `tEXt` chunks and gets them back. `embed` reads the PNG before it writes, and a PNG never holds two of one part. `extract` writes each part byte for byte, to `<PNG name>.spec.py` and `<PNG name>.mmd` |
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_diagramlib.py` | Python | 53 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a theme change removes the other theme's pictures, a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, with no build file kept unless `--keep-svg` is given, each PNG carries its spec once, and the Markdown fits one theme or both |
-| `scripts/tests/test_embed_spec.py` | Python | 34 tests: the spec comes back byte for byte, every other chunk stays untouched, a second embed replaces the first, a PNG that already holds the spec is not written, a PNG that holds two specs ends with one, a real PNG from another encoder takes the spec, the four sample pictures carry the current sample spec, and extract names the file after the picture and never overwrites a different one, and a file that is not a PNG gets a plain message |
+| `scripts/tests/test_diagramlib.py` | Python | 55 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a theme change removes the other theme's pictures, a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, with no build file kept unless `--keep-svg` is given, each PNG carries its spec and its own Mermaid text once, a data flow without Mermaid text carries none, and the Markdown fits one theme or both |
+| `scripts/tests/test_embed_spec.py` | Python | 49 tests: both parts come back byte for byte, every other chunk stays untouched, each part is replaced on its own, a PNG that already holds the parts is not written, a Mermaid part that is left out is removed, a PNG that holds two of a part ends with one, a real PNG from another encoder takes both parts, the four sample pictures carry the current sample spec and their own Mermaid text, extract names the files after the picture and never overwrites a different one, and a file that is not a PNG gets a plain message |
 | `scripts/tests/pngs.py` | Python | A PNG small enough to build by hand, for the tests that need a real one |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new diagram |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
@@ -351,5 +351,5 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 
 - **The width check is an average, not a ceiling.** A long label at its limit can run up to about a fifth wider than its estimate. Step 6 catches it.
 - **Free labels are not checked.** Words placed with `label()`, and zone subtitles, rely on step 6.
-- **The spec travels in plain text.** Each PNG carries its spec as readable text, so anyone who gets the file can read it. A service that rebuilds images, such as some chat apps and mail gateways, drops it. No other copy of the spec is kept, so a PNG that has lost its spec cannot be rebuilt: the committed PNG in the repo is the copy to rely on.
+- **The spec and the Mermaid text travel in plain text.** Each PNG carries both as readable text, so anyone who gets the file can read them. A service that rebuilds images, such as some chat apps and mail gateways, drops them. No other copy of the spec is kept, so a PNG that has lost it cannot be rebuilt: the committed PNG in the repo is the copy to rely on. The doc's closed `<details>` block still holds the Mermaid text.
 - **The defaults are for a Mac.** Arial and Menlo come with macOS. On another system, `rsvg-convert` uses the nearest fonts it has, and the width checks are less exact. The doctor's install line uses Homebrew.

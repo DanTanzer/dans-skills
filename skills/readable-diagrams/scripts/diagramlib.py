@@ -480,6 +480,12 @@ def picture_block(stem, alt, folder, mermaid=None, themes=BOTH):
 
 
 # ====================================================================================== building from a spec
+def mmd_text(mermaid):
+    """The text of a diagram's .mmd file: its Mermaid and a final newline, or None for a diagram with no Mermaid text.
+    The file and the copy inside each PNG are this one text."""
+    return mermaid + "\n" if mermaid else None
+
+
 def build(spec, out_dir, themes=BOTH):
     """spec: a module or object with DIAGRAMS, a list of dicts, each with stem, alt and either svg (a string or a
     callable) or seq (a sequence dict, drawn and also written as Mermaid). Optional: mermaid, and LEGEND on the spec,
@@ -504,8 +510,9 @@ def build(spec, out_dir, themes=BOTH):
             files[theme] = os.path.join(out_dir, f"{stem}{THEME_SUFFIX[theme]}.svg")
             with open(files[theme], "w", encoding="utf-8") as handle:
                 handle.write(card(svg, theme, legend_texts, f["alt"]))
-        if mermaid:
+        mmd = mmd_text(mermaid)
+        if mmd:
             with open(os.path.join(out_dir, f"{stem}.mmd"), "w", encoding="utf-8") as handle:
-                handle.write(mermaid + "\n")
+                handle.write(mmd)
         diagrams.append({"stem": stem, "alt": f["alt"], "svg": svg, "mermaid": mermaid, "files": files})
     return diagrams
