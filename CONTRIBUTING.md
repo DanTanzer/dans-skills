@@ -34,9 +34,12 @@ dans-skills/                             repository, marketplace and plugin "dan
             ├── diagramlib.py            the drawing library: hand-laid-out SVG in one house style
             ├── render.py                one command: builds a spec, draws its PNGs with rsvg-convert, prints the Markdown
             ├── example_spec.py          a worked example with three diagrams; copy it to start a set
+            ├── embed_spec.py            puts a spec inside a PNG as a text chunk, and gets it back
             ├── doctor.sh                checks the Mac: Python, rsvg-convert and the fonts
             └── tests/
-                └── test_diagramlib.py   checks the example and the sample build, and the text checks refuse what they should
+                ├── test_diagramlib.py   checks the example and the sample build, and the text checks refuse what they should
+                ├── test_embed_spec.py   checks the spec goes into a PNG once and comes back byte for byte
+                └── pngs.py              a PNG small enough to build by hand, for the tests
 ```
 
 The `.gitignore` at the top keeps Python caches and local tool folders out of git. Each skill also keeps its own `.gitignore`, so a skill folder copied on its own stays clean. A new skill is a new folder under `skills/`, with its own `SKILL.md` and its own `.gitignore`.

@@ -11,7 +11,8 @@ DOC.md's own path, such as .readable-diagrams/docs/design.md/. DOC.md's spec goe
 With --doc, every build file goes in DOC.md's runtime folder: an SVG per diagram and theme, and a .mmd where there is
 Mermaid. rsvg-convert draws only the PNGs that DOC.md shows, into <doc name>-diagrams/ next to DOC.md. Then the
 Markdown for each diagram is printed, to paste into DOC.md. --theme is required with --doc, because only the user knows
-which pictures the doc should show.
+which pictures the doc should show. Every PNG it draws also carries SPEC.py's text inside it (embed_spec.py), so a
+committed PNG keeps the spec that drew it.
 
 With --out instead, everything goes in DIR, in both themes unless --theme says otherwise. --no-png stops after the
 SVGs, for a quick check. Exit 1 with a plain message when a label does not fit or the export fails, 2 for a usage
@@ -30,6 +31,7 @@ RUNTIME_NAME = ".readable-diagrams"
 IGNORE_EVERYTHING = "# The readable-diagrams skill makes everything in this folder. None of it belongs in git.\n*\n"
 sys.path.insert(0, HERE)
 import diagramlib  # noqa: E402
+import embed_spec  # noqa: E402
 
 THEMES = {"light": ("light",), "dark": ("dark",), "both": diagramlib.BOTH}
 
@@ -164,9 +166,10 @@ def where(args):
     return 0
 
 
-def draw_pngs(diagrams, png_dir):
-    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir. When this call made png_dir and the export fails
-    before a PNG is in it, the empty folder goes again, so a failed export leaves nothing next to the doc."""
+def draw_pngs(diagrams, png_dir, spec_text):
+    """rsvg-convert draws each diagram's SVGs as PNGs in png_dir, and each PNG takes spec_text as its spec. When this
+    call made png_dir and the export fails before a PNG is in it, the empty folder goes again, so a failed export
+    leaves nothing next to the doc."""
     made = not os.path.isdir(png_dir)
     os.makedirs(png_dir, exist_ok=True)
     try:
@@ -179,6 +182,11 @@ def draw_pngs(diagrams, png_dir):
                     return stop_with_doctor("rsvg-convert was not found, so the PNG export cannot run.")
                 if done.returncode != 0:
                     print(f"rsvg-convert could not draw {svg}:\n{done.stderr.strip()[-2000:]}")
+                    return 1
+                try:
+                    embed_spec.embed_file(png, spec_text)
+                except (OSError, embed_spec.PngError) as err:
+                    print(f"cannot put the spec into the PNG: {embed_spec.why(err)}")
                     return 1
         return 0
     finally:
@@ -231,7 +239,7 @@ def main(argv):
     if not opts["png"]:
         return 0
     png_dir = diagrams_folder(doc) if doc else out
-    failed = draw_pngs(diagrams, png_dir)
+    failed = draw_pngs(diagrams, png_dir, embed_spec.read_text(opts["spec"]))
     if failed:
         return failed
     words = " and ".join(themes)

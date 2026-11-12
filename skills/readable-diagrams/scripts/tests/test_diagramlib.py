@@ -18,7 +18,9 @@ import xml.dom.minidom
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS)
 import diagramlib  # noqa: E402
+import embed_spec  # noqa: E402
 import render  # noqa: E402
+from tests.pngs import chunks_of, tiny_png  # noqa: E402
 
 SAMPLE = os.path.join(os.path.dirname(SCRIPTS), "sample", "spec.py")
 
@@ -60,7 +62,14 @@ def run_doctor(path_value):
 
 
 def fake_png(svg, png):
-    """Stands in for rsvg-convert: writes a small file where the PNG goes."""
+    """Stands in for rsvg-convert: writes a small, valid PNG where the PNG goes."""
+    with open(png, "wb") as handle:
+        handle.write(tiny_png())
+    return subprocess.CompletedProcess(["rsvg-convert"], 0, "", "")
+
+
+def fake_garbage(svg, png):
+    """Stands in for an rsvg-convert that wrote something that is not a PNG."""
     with open(png, "wb") as handle:
         handle.write(b"drawn from " + os.path.basename(svg).encode())
     return subprocess.CompletedProcess(["rsvg-convert"], 0, "", "")
@@ -332,6 +341,35 @@ class DocFolderTest(unittest.TestCase):
         self.assertEqual(4, len(os.listdir(self.pictures)))
         self.assertIn('srcset="Design-Notes-diagrams/data-flow-dark.png"', said)
 
+    def test_every_png_carries_the_spec_that_drew_it_once(self):
+        spec = self.spec_in_runtime()
+        code, said = self.run_render(spec, "--doc", self.doc, "--theme", "both")
+        self.assertEqual(0, code, said)
+        pictures = sorted(os.listdir(self.pictures))
+        self.assertEqual(4, len(pictures))
+        for name in pictures:
+            data = read_bytes(os.path.join(self.pictures, name))
+            self.assertEqual([read(spec)], embed_spec.specs_in(data), name)
+            self.assertEqual(1, [kind for kind, _ in chunks_of(data)].count(b"tEXt"), name)
+
+    def test_a_rebuild_after_a_spec_edit_carries_the_new_spec(self):
+        spec = self.spec_in_runtime()
+        self.run_render(spec, "--doc", self.doc, "--theme", "light")
+        write(spec, read(spec) + "# edited\n")
+        code, said = self.run_render(spec, "--doc", self.doc, "--theme", "light")
+        self.assertEqual(0, code, said)
+        data = read_bytes(os.path.join(self.pictures, "data-flow.png"))
+        self.assertEqual([read(spec)], embed_spec.specs_in(data))
+        self.assertTrue(embed_spec.extract(data).endswith("# edited\n"))
+
+    def test_a_png_that_cannot_take_the_spec_stops_the_export_with_a_plain_message(self):
+        spec = self.spec_in_runtime()
+        with mock.patch.object(render, "rasterize", fake_garbage), contextlib.redirect_stdout(io.StringIO()) as said:
+            code = render.main(["render.py", spec, "--doc", self.doc, "--theme", "light"])
+        self.assertEqual(1, code)
+        self.assertIn("cannot put the spec into the PNG:", said.getvalue())
+        self.assertIn("is not a PNG this can read", said.getvalue())
+
     def test_a_theme_change_removes_only_this_specs_other_theme(self):
         spec = self.spec_in_runtime()
         self.run_render(spec, "--doc", self.doc, "--theme", "both")
@@ -389,6 +427,8 @@ class RenderPathsTest(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             calls.append((command, kwargs, os.path.isfile(command[-1]), os.path.isdir(os.path.dirname(command[-2]))))
+            with open(command[-2], "wb") as handle:
+                handle.write(tiny_png())
             return subprocess.CompletedProcess(command, 0, "", "")
 
         start = os.getcwd()

@@ -97,7 +97,7 @@ Every box, arrow and label sits where Claude put it. The legend inside each pict
 1. Claude asks once which pictures the doc shows: light, dark or both.
 2. Claude writes a small Python file, the spec, in the doc's own folder inside `.readable-diagrams/`, at the root of your project. That folder keeps itself out of git. In a data flow, the spec places every box, arrow and label by hand. In a sequence, the spec lists the messages in order, and the code places them.
 3. `render.py` turns the spec into SVG (Scalable Vector Graphics), using `diagramlib.py`. It checks that the text in boxes and sequences fits, and that each box is tall enough for its text. It writes one SVG per diagram and theme, each complete on its own, in the runtime folder.
-4. `rsvg-convert` draws each SVG as a PNG, at twice its size, into a folder next to the doc and named after it: `design-diagrams/` for `design.md`.
+4. `rsvg-convert` draws each SVG as a PNG, at twice its size, into a folder next to the doc and named after it: `design-diagrams/` for `design.md`. `render.py` then puts the spec inside each PNG, so the picture carries its own source.
 5. Claude looks at every picture. Then Claude pastes the Markdown that `render.py` prints into the doc, with the Mermaid text folded underneath.
 
 In your repo, only the doc and its `-diagrams` folder change. A build never goes online. Only the one-time install does: `brew install librsvg` downloads `rsvg-convert` from Homebrew, the package manager for the Mac.
@@ -296,6 +296,14 @@ The light file becomes `<stem>.png`, and the dark file becomes `<stem>-dark.png`
 | `data-flow.png` | 1840 × 846 |
 | `build-sequence.png` | 1840 × 1450 |
 
+Then `render.py` puts the spec inside each PNG. The spec's text goes in as a PNG text chunk named `readable-diagrams-spec`, just before the end of the file. The pixels do not change, and the picture draws the same. The file grows by the size of the spec, a few kilobytes.
+
+`embed_spec.py` reads the PNG before it writes. A PNG that already holds exactly this spec is not written at all. One that holds a different spec gets the new one in its place. A PNG never holds two. To get a spec back, for example when the runtime folder is gone:
+
+```bash
+python3 -I scripts/embed_spec.py extract docs/design-diagrams/data-flow.png > .readable-diagrams/docs/design.md/spec.py
+```
+
 ### Step 6: Claude looks at every PNG once
 
 `SKILL.md` tells Claude to open each PNG with its Read tool. The Read tool shows Claude the image itself. Claude looks for four faults:
@@ -327,10 +335,13 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 | `HOW-IT-WORKS.md` | Markdown | This page |
 | `.gitignore` | git settings | Keeps Python caches out of git, so a copied skill folder stays clean |
 | `scripts/diagramlib.py` | Python, standard library only | The canvas, sequences, text checks, box heights, style sheet, legend card, Mermaid text and picture block |
-| `scripts/render.py` | Python | One command: `where` finds a doc's runtime folder; a build writes the SVGs, draws each PNG with `rsvg-convert` and prints the Markdown |
+| `scripts/render.py` | Python | One command: `where` finds a doc's runtime folder; a build writes the SVGs, draws each PNG with `rsvg-convert`, puts the spec inside it and prints the Markdown |
+| `scripts/embed_spec.py` | Python, standard library only | Puts a spec inside a PNG as a `tEXt` chunk and gets it back. `embed` reads the PNG before it writes, and a PNG never holds two specs. `extract` prints the spec byte for byte |
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_diagramlib.py` | Python | 44 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a doc's folder gets only the pictures it shows, git sees nothing in `.readable-diagrams/`, a theme change removes the other theme's pictures, and the Markdown fits one theme or both |
+| `scripts/tests/test_diagramlib.py` | Python | 47 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a doc's folder gets only the pictures it shows, git sees nothing in `.readable-diagrams/`, a theme change removes the other theme's pictures, each PNG carries its spec once, and the Markdown fits one theme or both |
+| `scripts/tests/test_embed_spec.py` | Python | 23 tests: the spec comes back byte for byte, every other chunk stays untouched, a second embed replaces the first, a PNG that already holds the spec is not written, a PNG that holds two specs ends with one, and a file that is not a PNG gets a plain message |
+| `scripts/tests/pngs.py` | Python | A PNG small enough to build by hand, for the tests that need a real one |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new diagram |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
 
@@ -338,4 +349,5 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 
 - **The width check is an average, not a ceiling.** A long label at its limit can run up to about a fifth wider than its estimate. Step 6 catches it.
 - **Free labels are not checked.** Words placed with `label()`, and zone subtitles, rely on step 6.
+- **The spec travels in plain text.** Each PNG carries its spec as readable text, so anyone who gets the file can read it. A service that rebuilds images, such as some chat apps and mail gateways, drops it. The committed PNG in the repo is the copy to rely on.
 - **The defaults are for a Mac.** Arial and Menlo come with macOS. On another system, `rsvg-convert` uses the nearest fonts it has, and the width checks are less exact. The doctor's install line uses Homebrew.
