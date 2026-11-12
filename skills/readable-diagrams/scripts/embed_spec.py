@@ -6,18 +6,22 @@ their settings. Commit the PNG and its spec comes with it. No pixel changes: one
 image draws the same before and after.
 
     python3 -I embed_spec.py embed DIAGRAM.png SPEC.py    put SPEC.py in DIAGRAM.png, in place
-    python3 -I embed_spec.py extract DIAGRAM.png          print the spec, byte for byte; send it to a file
+    python3 -I embed_spec.py extract DIAGRAM.png [DIR]    write the spec to DIR/DIAGRAM.spec.py (DIR is this folder)
 
 render.py runs embed for every PNG it draws, so a rebuilt picture carries the spec that drew it. Run embed yourself for
 a picture drawn before. Run extract to get a spec back: the PNG holds the only copy.
+
+Extract names the file after the picture, data-flow.png to data-flow.spec.py, so pictures that share a folder never
+share a spec file. It reads before it writes, like embed: a file that already holds the spec is left alone, and a file
+that holds something else stops the extract, so edits in it are never lost.
 
 Embed reads before it writes, and a PNG never holds two specs. A PNG that already holds exactly this spec, once, is not
 written at all. One that holds a different spec gets the new one in its place. One that holds two or more ends with one.
 Only tEXt chunks named readable-diagrams-spec are read or changed.
 
 The text is stored as UTF-8. The PNG standard says Latin-1 for tEXt; the two agree on plain ASCII, and extract reads
-either. Exit 1 with a plain message on stderr when the file is not a PNG this can read or holds no spec, 2 for a usage
-mistake. Stdout carries only the spec.
+either. Exit 1 with a plain message on stderr when the file is not a PNG this can read, holds no spec, or would
+overwrite a different file, 2 for a usage mistake.
 """
 import os
 import struct
@@ -28,10 +32,14 @@ sys.dont_write_bytecode = True
 
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 KEYWORD = b"readable-diagrams-spec"
-USAGE = "usage: embed_spec.py embed DIAGRAM.png SPEC.py | embed_spec.py extract DIAGRAM.png"
+USAGE = "usage: embed_spec.py embed DIAGRAM.png SPEC.py | embed_spec.py extract DIAGRAM.png [DIR]"
 
 
-class PngError(Exception):
+class SpecError(Exception):
+    """A problem to tell the person at the keyboard in plain words."""
+
+
+class PngError(SpecError):
     """The bytes are not a PNG this can work on."""
 
 
@@ -136,6 +144,28 @@ def extract_file(path):
         raise png_error(path, err) from None
 
 
+def spec_name(png_path):
+    """The file a PNG's spec goes to: the PNG's own name with .spec.py, so two pictures never share a file."""
+    return os.path.splitext(os.path.basename(png_path))[0] + ".spec.py"
+
+
+def extract_to(png_path, folder="."):
+    """Write the spec in the PNG at png_path to folder/<PNG name>.spec.py. Returns (path, wrote). Read first: a file
+    that already holds this spec is left as it is (wrote is False), and a file that holds something else stops the
+    extract, so edits in it are never lost."""
+    text = extract_file(png_path)
+    if text is None:
+        raise SpecError(f"{png_path} holds no readable-diagrams spec")
+    path = os.path.join(folder, spec_name(png_path))
+    if os.path.exists(path):
+        if read_text(path) == text:
+            return path, False
+        raise SpecError(f"{path} already exists and holds something else: move it or delete it, then extract again")
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    return path, True
+
+
 def why(err):
     if isinstance(err, OSError):
         return f"{err.filename}: {err.strerror}" if err.filename else str(err)
@@ -148,21 +178,19 @@ def main(argv):
         png, spec = args
         try:
             wrote = embed_file(png, read_text(spec))
-        except (OSError, UnicodeDecodeError, PngError) as err:
+        except (OSError, UnicodeDecodeError, SpecError) as err:
             print(f"embed_spec.py: {why(err)}", file=sys.stderr)
             return 1
         print(f"put {spec} into {png}" if wrote else f"{png} already holds {spec}; nothing changed")
         return 0
-    if command == "extract" and len(args) == 1:
+    if command == "extract" and len(args) in (1, 2):
         try:
-            text = extract_file(args[0])
-        except (OSError, PngError) as err:
+            path, wrote = extract_to(*args)
+        except (OSError, UnicodeDecodeError, SpecError) as err:
             print(f"embed_spec.py: {why(err)}", file=sys.stderr)
             return 1
-        if text is None:
-            print(f"embed_spec.py: {args[0]} holds no readable-diagrams spec", file=sys.stderr)
-            return 1
-        sys.stdout.buffer.write(text.encode("utf-8"))
+        print(f"put the spec of {args[0]} into {path}" if wrote
+              else f"{path} already holds the spec of {args[0]}; nothing changed")
         return 0
     print(USAGE, file=sys.stderr)
     return 2

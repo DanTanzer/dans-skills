@@ -1,5 +1,5 @@
-"""A worked example: three diagrams of a small notes sync. To start a new set, copy this file to spec.py in the
-session's scratch folder (SKILL.md, step 1). To build this example on its own, with SKILL as this skill's folder and
+"""A worked example: three diagrams of a small notes sync. To start a new set, copy this file to <doc name>.spec.py
+in the session's scratch folder (SKILL.md, step 1). To build this example on its own, with SKILL as this skill's folder and
 SCRATCH as a temporary folder:
 
     python3 -I SKILL/scripts/render.py SKILL/scripts/example_spec.py --out SCRATCH/example --theme both

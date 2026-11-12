@@ -101,7 +101,7 @@ The data flow of one build, drawn by the skill:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.png">
-  <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="800" alt="Data flow of one build for design.md. Claude writes spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.">
+  <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="800" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.">
 </picture>
 
 The same build, in order:

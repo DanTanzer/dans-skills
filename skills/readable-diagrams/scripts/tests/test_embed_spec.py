@@ -185,32 +185,118 @@ class RealPngTest(unittest.TestCase):
                 self.assertEqual(before, handle.read())
 
 
+class ExtractToTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.out = os.path.join(self.tmp, "out")
+        os.makedirs(self.out)
+
+    def picture(self, name, text=None):
+        path = os.path.join(self.tmp, name)
+        with open(path, "wb") as handle:
+            handle.write(tiny_png() if text is None else embed_spec.embed(tiny_png(), text))
+        return path
+
+    def test_the_file_is_named_after_the_picture(self):
+        self.assertEqual("data-flow.spec.py", embed_spec.spec_name("docs/readable-diagrams/design/data-flow.png"))
+        self.assertEqual("data-flow-dark.spec.py", embed_spec.spec_name("data-flow-dark.png"))
+
+    def test_the_spec_is_written_byte_for_byte_to_a_file_named_after_the_picture(self):
+        text = "# a \u2192 b\r\nDIAGRAMS = []\n"
+        path, wrote = embed_spec.extract_to(self.picture("data-flow.png", text), self.out)
+        self.assertEqual((os.path.join(self.out, "data-flow.spec.py"), True), (path, wrote))
+        with open(path, "rb") as handle:
+            self.assertEqual(text.encode("utf-8"), handle.read())
+
+    def test_two_pictures_in_one_folder_give_two_files(self):
+        embed_spec.extract_to(self.picture("a.png", "A = 1\n"), self.out)
+        embed_spec.extract_to(self.picture("b.png", "B = 2\n"), self.out)
+        self.assertEqual(["a.spec.py", "b.spec.py"], sorted(os.listdir(self.out)))
+        self.assertEqual("A = 1\n", embed_spec.read_text(os.path.join(self.out, "a.spec.py")))
+        self.assertEqual("B = 2\n", embed_spec.read_text(os.path.join(self.out, "b.spec.py")))
+
+    def test_a_file_that_already_holds_the_spec_is_left_alone(self):
+        png = self.picture("a.png", "A = 1\n")
+        path, _ = embed_spec.extract_to(png, self.out)
+        os.utime(path, (1_000_000_000, 1_000_000_000))
+        self.assertEqual((path, False), embed_spec.extract_to(png, self.out))
+        self.assertEqual(1_000_000_000, int(os.path.getmtime(path)))
+
+    def test_a_file_that_holds_something_else_stops_the_extract_and_stays_as_it_was(self):
+        existing = os.path.join(self.out, "a.spec.py")
+        with open(existing, "w", encoding="utf-8") as handle:
+            handle.write("my edits\n")
+        with self.assertRaisesRegex(embed_spec.SpecError, "already exists and holds something else"):
+            embed_spec.extract_to(self.picture("a.png", "A = 1\n"), self.out)
+        self.assertEqual("my edits\n", embed_spec.read_text(existing))
+
+    def test_a_picture_without_a_spec_writes_nothing(self):
+        with self.assertRaisesRegex(embed_spec.SpecError, "holds no readable-diagrams spec"):
+            embed_spec.extract_to(self.picture("x.png"), self.out)
+        self.assertEqual([], os.listdir(self.out))
+
+
 class CommandLineTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp)
         self.png = os.path.join(self.tmp, "d.png")
-        self.spec = os.path.join(self.tmp, "spec.py")
+        self.spec = os.path.join(self.tmp, "design.spec.py")
+        self.out = os.path.join(self.tmp, "out")
+        os.makedirs(self.out)
         with open(self.png, "wb") as handle:
             handle.write(tiny_png())
 
-    def run_tool(self, *args):
-        return subprocess.run([sys.executable, "-I", TOOL, *args], capture_output=True)
+    def run_tool(self, *args, cwd=None):
+        return subprocess.run([sys.executable, "-I", TOOL, *args], capture_output=True, cwd=cwd)
 
-    def test_embed_then_extract_gives_the_spec_file_back_byte_for_byte(self):
-        text = b"# a \xe2\x86\x92 b\r\nDIAGRAMS = []\n"
+    def embedded(self, text=b"# a \xe2\x86\x92 b\r\nDIAGRAMS = []\n"):
         with open(self.spec, "wb") as handle:
             handle.write(text)
         done = self.run_tool("embed", self.png, self.spec)
         self.assertEqual(0, done.returncode, done.stderr)
-        done = self.run_tool("extract", self.png)
+        return text
+
+    def test_embed_then_extract_gives_the_spec_file_back_byte_for_byte_named_after_the_picture(self):
+        text = self.embedded()
+        done = self.run_tool("extract", self.png, self.out)
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertEqual(text, done.stdout)
+        self.assertEqual(["d.spec.py"], os.listdir(self.out))
+        with open(os.path.join(self.out, "d.spec.py"), "rb") as handle:
+            self.assertEqual(text, handle.read())
+
+    def test_extract_without_a_folder_writes_into_the_current_folder(self):
+        text = self.embedded()
+        done = self.run_tool("extract", self.png, cwd=self.out)
+        self.assertEqual(0, done.returncode, done.stderr)
+        with open(os.path.join(self.out, "d.spec.py"), "rb") as handle:
+            self.assertEqual(text, handle.read())
+
+    def test_two_pictures_in_one_folder_never_share_a_spec_file(self):
+        self.embedded()
+        other = os.path.join(self.tmp, "e.png")
+        shutil.copy(self.png, other)
+        self.assertEqual(0, self.run_tool("extract", self.png, self.out).returncode)
+        self.assertEqual(0, self.run_tool("extract", other, self.out).returncode)
+        self.assertEqual(["d.spec.py", "e.spec.py"], sorted(os.listdir(self.out)))
+
+    def test_extracting_twice_says_so_and_a_different_file_in_the_way_stops_it(self):
+        self.embedded()
+        self.run_tool("extract", self.png, self.out)
+        done = self.run_tool("extract", self.png, self.out)
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn(b"already holds the spec", done.stdout)
+        target = os.path.join(self.out, "d.spec.py")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("my edits\n")
+        done = self.run_tool("extract", self.png, self.out)
+        self.assertEqual(1, done.returncode)
+        self.assertIn(b"already exists and holds something else", done.stderr)
+        self.assertEqual("my edits\n", embed_spec.read_text(target))
 
     def test_embedding_twice_says_so_and_changes_nothing(self):
-        with open(self.spec, "w", encoding="utf-8") as handle:
-            handle.write("DIAGRAMS = []\n")
-        self.run_tool("embed", self.png, self.spec)
+        self.embedded()
         with open(self.png, "rb") as handle:
             once = handle.read()
         done = self.run_tool("embed", self.png, self.spec)
@@ -219,10 +305,10 @@ class CommandLineTest(unittest.TestCase):
         with open(self.png, "rb") as handle:
             self.assertEqual(once, handle.read())
 
-    def test_extract_of_a_png_without_a_spec_says_so_on_stderr_and_prints_nothing(self):
-        done = self.run_tool("extract", self.png)
+    def test_extract_of_a_png_without_a_spec_says_so_on_stderr_and_writes_nothing(self):
+        done = self.run_tool("extract", self.png, self.out)
         self.assertEqual(1, done.returncode)
-        self.assertEqual(b"", done.stdout)
+        self.assertEqual([], os.listdir(self.out))
         self.assertIn(b"holds no readable-diagrams spec", done.stderr)
 
     def test_embed_into_something_that_is_not_a_png_names_the_file(self):

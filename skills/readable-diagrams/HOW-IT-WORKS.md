@@ -32,7 +32,7 @@ The data flow:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="sample/diagrams/data-flow-dark.png">
-  <img src="sample/diagrams/data-flow.png" alt="Data flow of one build for design.md. Claude writes spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.">
+  <img src="sample/diagrams/data-flow.png" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec inside, and Claude looks at each PNG.">
 </picture>
 
 <details>
@@ -42,7 +42,7 @@ The data flow:
 flowchart LR
   you(["You"])
   subgraph mac["YOUR MAC"]
-    claude["Claude session + skill"] -->|writes| spec[("spec.py")]
+    claude["Claude session + skill"] -->|writes| spec[("design.spec.py")]
     spec -->|reads| render["render.py + diagramlib"]
     render -->|writes| build[("a temporary folder: an .svg per theme, .mmd")]
     build -->|reads| exporter["rsvg-convert"]
@@ -73,15 +73,15 @@ sequenceDiagram
   participant F as Files (on this Mac)
   participant X as rsvg-convert (from librsvg)
   U->>C: "draw how the parts talk"
-  C->>F: writes spec.py in its scratch folder
+  C->>F: writes design.spec.py in its scratch folder
   C->>R: render.py --doc design.md
-  R->>F: reads spec.py
+  R->>F: reads design.spec.py
   Note over R: draws every box and arrow,<br/>checks the text in each box
   R->>F: writes svg and mmd, temp
   R->>X: rsvg-convert, once per svg
   Note over X: at twice the size: 920<br/>units become 1840 pixels
   X->>F: reads an svg, writes its PNG
-  R->>F: puts spec.py inside each PNG
+  R->>F: puts the spec inside each PNG
   R->>F: removes the temporary files
   R->>C: 2 PNGs, the Markdown
   C->>F: looks at each PNG once
@@ -194,10 +194,10 @@ built 2 diagram(s) in SCRATCH/sample: data-flow, build-sequence
 4 PNG(s), light and dark, in SCRATCH/sample. Look at each one once before you ship it.
 ```
 
-For a doc, Claude runs one command. `SKILL` stands for the skill's folder, and `SCRATCH` for the session's scratch folder, where `spec.py` lives while Claude works:
+For a doc, Claude runs one command. `SKILL` stands for the skill's folder, and `SCRATCH` for the session's scratch folder, where the spec lives while Claude works, named after the doc:
 
 ```bash
-python3 -I SKILL/scripts/render.py SCRATCH/spec.py --doc docs/design.md
+python3 -I SKILL/scripts/render.py SCRATCH/design.spec.py --doc docs/design.md
 ```
 
 With `--doc`, the PNGs go next to the doc, in `docs/readable-diagrams/design/`: a `readable-diagrams` folder with one subfolder for each doc, so two docs in one folder keep their pictures apart and each doc's pictures stay together. The SVG and Mermaid files are built in a temporary folder that `render.py` removes when it ends, and the spec goes inside each PNG, so no copy of the spec stays on the laptop. To change a picture later, Claude takes the spec out of one of its PNGs with `embed_spec.py extract` and builds again.
@@ -301,8 +301,10 @@ Then `render.py` puts the spec inside each PNG. The spec's text goes in as a PNG
 `embed_spec.py` reads the PNG before it writes. A PNG that already holds exactly this spec is not written at all. One that holds a different spec gets the new one in its place. A PNG never holds two. To get a spec back, which is how Claude starts a change to pictures that exist:
 
 ```bash
-python3 -I scripts/embed_spec.py extract docs/readable-diagrams/design/data-flow.png > SCRATCH/spec.py
+python3 -I scripts/embed_spec.py extract docs/readable-diagrams/design/data-flow.png SCRATCH
 ```
+
+That writes `SCRATCH/data-flow.spec.py`, named after the picture, so pictures that share a folder never share a spec file. `extract` reads before it writes too: a file that already holds the spec is left alone, and a file that holds something else stops the extract, so edits in it are never lost.
 
 ### Step 6: Claude looks at every PNG once
 
@@ -340,7 +342,7 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
 | `scripts/tests/test_diagramlib.py` | Python | 53 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a theme change removes the other theme's pictures, a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, with no build file kept unless `--keep-svg` is given, each PNG carries its spec once, and the Markdown fits one theme or both |
-| `scripts/tests/test_embed_spec.py` | Python | 25 tests: the spec comes back byte for byte, every other chunk stays untouched, a second embed replaces the first, a PNG that already holds the spec is not written, a PNG that holds two specs ends with one, a real PNG from another encoder takes the spec, the four sample pictures carry the current sample spec, and a file that is not a PNG gets a plain message |
+| `scripts/tests/test_embed_spec.py` | Python | 34 tests: the spec comes back byte for byte, every other chunk stays untouched, a second embed replaces the first, a PNG that already holds the spec is not written, a PNG that holds two specs ends with one, a real PNG from another encoder takes the spec, the four sample pictures carry the current sample spec, and extract names the file after the picture and never overwrites a different one, and a file that is not a PNG gets a plain message |
 | `scripts/tests/pngs.py` | Python | A PNG small enough to build by hand, for the tests that need a real one |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new diagram |
 | `sample/` | Python and PNG | The spec and pictures this page walks through |
