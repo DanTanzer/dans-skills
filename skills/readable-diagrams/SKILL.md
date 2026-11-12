@@ -72,7 +72,7 @@ These are not decoration. Each one came from something that made a picture hard 
 | `scripts/embed_spec.py` | Puts a spec inside a PNG as a `tEXt` chunk and gets it back: `embed PNG SPEC.py` reads before it writes and a PNG never holds two specs; `extract PNG > spec.py` prints the spec byte for byte |
 | `scripts/doctor.sh` | Checks Python, `rsvg-convert` and the fonts; names the Homebrew command for anything missing |
 | `scripts/tests/test_diagramlib.py` | Builds the example and the sample, checks each SVG is well-formed and complete on its own, checks the width and height rules refuse what they should, and checks a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, each carrying its spec once, with no build file kept |
-| `scripts/tests/test_embed_spec.py` | Checks the spec comes back byte for byte, the pixels and every other chunk stay untouched, a second embed replaces the first, a PNG that already holds the spec is not written, and a file that is not a PNG gets a plain message |
+| `scripts/tests/test_embed_spec.py` | Checks the spec comes back byte for byte, the pixels and every other chunk stay untouched, a second embed replaces the first, a PNG that already holds the spec is not written, the four sample pictures carry the current sample spec, and a file that is not a PNG gets a plain message |
 | `references/layout.md` | The coordinate cookbook: where the rows sit in the example, and how to adapt them to two, three or four machines |
 | `HOW-IT-WORKS.md` | For people: the whole process, step by step, built around the sample |
 | `sample/` | A small spec and the pictures it makes: the skill's own pipeline, drawn by the skill |

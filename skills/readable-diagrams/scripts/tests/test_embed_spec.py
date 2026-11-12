@@ -16,7 +16,9 @@ from tests.pngs import chunks_of, png_chunk, tiny_png  # noqa: E402
 
 SKILL = os.path.dirname(SCRIPTS)
 SAMPLE_SPEC = os.path.join(SKILL, "sample", "spec.py")
-SAMPLE_PNG = os.path.join(SKILL, "sample", "diagrams", "data-flow.png")
+SAMPLE_DIAGRAMS = os.path.join(SKILL, "sample", "diagrams")
+MERMAID_PNG = os.path.join(SAMPLE_DIAGRAMS, "data-flow-mermaid.png")
+SAMPLE_PICTURES = ("data-flow.png", "data-flow-dark.png", "build-sequence.png", "build-sequence-dark.png")
 TOOL = os.path.join(SCRIPTS, "embed_spec.py")
 SPEC_KEYWORD = b"readable-diagrams-spec"
 
@@ -148,22 +150,39 @@ class FileTest(unittest.TestCase):
 
 
 class RealPngTest(unittest.TestCase):
-    def test_a_png_that_rsvg_convert_drew_takes_the_sample_spec_and_keeps_its_pixels(self):
+    def test_a_real_png_without_a_spec_takes_the_sample_spec_and_keeps_its_pixels(self):
+        # Mermaid drew this one, not the skill: a real file from another PNG encoder, with no spec in it.
         with tempfile.TemporaryDirectory() as tmp:
-            png = os.path.join(tmp, "data-flow.png")
-            shutil.copy(SAMPLE_PNG, png)
+            png = os.path.join(tmp, "data-flow-mermaid.png")
+            shutil.copy(MERMAID_PNG, png)
             spec = embed_spec.read_text(SAMPLE_SPEC)
             with open(png, "rb") as handle:
                 before = chunks_of(handle.read())
-            embed_spec.embed_file(png, spec)
+            self.assertTrue(embed_spec.embed_file(png, spec))
             with open(png, "rb") as handle:
                 data = handle.read()
         after = chunks_of(data)
         self.assertEqual(before[:-1], after[:-2])
-        self.assertEqual((b"IEND",), tuple(kind for kind, _ in after[-1:]))
+        self.assertEqual(before[-1], after[-1])
         self.assertEqual(len(before) + 1, len(after))
         self.assertEqual(spec, embed_spec.extract(data))
-        self.assertEqual(1840, struct.unpack(">II", data[16:24])[0])
+
+    def test_the_sample_pictures_carry_the_current_sample_spec(self):
+        # Edit sample/spec.py and these fail until the four pictures are drawn again: render.py puts the spec in them.
+        spec = embed_spec.read_text(SAMPLE_SPEC)
+        for name in SAMPLE_PICTURES:
+            with self.subTest(picture=name), open(os.path.join(SAMPLE_DIAGRAMS, name), "rb") as handle:
+                self.assertEqual([spec], embed_spec.specs_in(handle.read()))
+
+    def test_embedding_the_spec_a_sample_picture_already_holds_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            png = os.path.join(tmp, "data-flow.png")
+            shutil.copy(os.path.join(SAMPLE_DIAGRAMS, "data-flow.png"), png)
+            with open(png, "rb") as handle:
+                before = handle.read()
+            self.assertFalse(embed_spec.embed_file(png, embed_spec.read_text(SAMPLE_SPEC)))
+            with open(png, "rb") as handle:
+                self.assertEqual(before, handle.read())
 
 
 class CommandLineTest(unittest.TestCase):
