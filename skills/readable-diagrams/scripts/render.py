@@ -1,17 +1,19 @@
 """Build a diagram spec and draw its PNGs, in one command.
 
-    python3 -I render.py SPEC.py --doc DOC.md [--theme light|dark|both] [--out DIR] [--no-png]
+    python3 -I render.py SPEC.py --doc DOC.md [--theme light|dark|both] [--keep-svg] [--no-png]
     python3 -I render.py SPEC.py --out DIR [--theme light|dark|both] [--no-png]
 
 With --doc, rsvg-convert draws the PNGs that DOC.md shows into readable-diagrams/<doc name>/ next to DOC.md, such as
-docs/readable-diagrams/design/ for docs/design.md. Then the Markdown for each diagram is printed, to paste into DOC.md. The spec
-goes inside every PNG (embed_spec.py), and the PNGs are all that is kept: the SVGs and the Mermaid text are built in a
-temporary folder that goes when the command ends. The spec comes back out of any PNG with embed_spec.py extract.
+docs/readable-diagrams/design/ for docs/design.md. Then the Markdown for each diagram is printed, to paste into DOC.md.
+The spec goes inside every PNG (embed_spec.py), and the PNGs are all that is kept: the SVGs and the Mermaid text are
+built in a temporary folder that goes when the command ends. The spec comes back out of any PNG with embed_spec.py
+extract. --keep-svg, off unless given, also keeps each SVG beside its PNG, and a build without it removes the SVGs an
+earlier build kept, so a kept SVG never goes stale.
 
---theme is light (white) unless it says dark or both. --out DIR keeps the build files in DIR: an SVG per diagram and
-theme, and a .mmd where there is Mermaid. Without --doc, --out also holds the PNGs. --no-png stops after the SVGs, for
-a quick check of the text widths. Exit 1 with a plain message when a label does not fit or the export fails, 2 for a
-usage mistake.
+--theme is light (white) unless it says dark or both. --out DIR is for a build without a doc: every file stays in DIR,
+an SVG per diagram and theme, a .mmd where there is Mermaid, and the PNGs. --no-png stops after the SVGs, for a quick
+check of the text widths, and keeps nothing. Exit 1 with a plain message when a label does not fit or the export
+fails, 2 for a usage mistake.
 """
 import importlib.util
 import os
@@ -84,14 +86,16 @@ def load_spec(path):
 
 
 def parse(args):
-    """SPEC.py, then --doc DOC.md, --out DIR, --theme THEME and --no-png, in any order. Returns (options, None), or
-    (None, what is wrong)."""
-    opts = {"spec": None, "doc": None, "out": None, "theme": DEFAULT_THEME, "png": True}
+    """SPEC.py, then --doc DOC.md, --out DIR, --theme THEME, --keep-svg and --no-png, in any order. Returns
+    (options, None), or (None, what is wrong)."""
+    opts = {"spec": None, "doc": None, "out": None, "theme": DEFAULT_THEME, "png": True, "keep_svg": False}
     rest = list(args)
     while rest:
         word = rest.pop(0)
         if word == "--no-png":
             opts["png"] = False
+        elif word == "--keep-svg":
+            opts["keep_svg"] = True
         elif word in ("--doc", "--out", "--theme"):
             if not rest:
                 return None, f"{word} needs a value"
@@ -106,6 +110,8 @@ def parse(args):
         return None, f"--theme is light, dark or both, not {opts['theme']!r}"
     if not opts["doc"] and not opts["out"]:
         return None, "say where the files go: --doc DOC.md, or --out DIR"
+    if opts["doc"] and opts["out"]:
+        return None, "use --doc or --out, not both: --keep-svg keeps each SVG beside the doc's pictures"
     if opts["doc"] and not has_folder(opts["doc"]):
         return None, f"there is no folder for {opts['doc']}"
     return opts, None
@@ -149,16 +155,26 @@ def draw_pngs(diagrams, png_dir, spec_text):
                 os.rmdir(folder)
 
 
-def drop_other_theme(diagrams, png_dir, themes):
-    """After a theme change, remove this spec's PNGs in the theme the doc no longer shows. Returns their paths."""
+def tidy_folder(diagrams, png_dir, themes, keep_svg):
+    """Leave png_dir holding what this build chose. This spec's PNGs and SVGs in a theme the doc no longer shows go, and
+    so do its SVGs in a theme the doc shows when keep_svg is off. Returns (path, why) for each file removed."""
     gone = []
     for f in diagrams:
         for theme, suffix in diagramlib.THEME_SUFFIX.items():
-            path = os.path.join(png_dir, f"{f['stem']}{suffix}.png")
-            if theme not in themes and os.path.exists(path):
-                os.remove(path)
-                gone.append(path)
+            shown = theme in themes
+            for ext, keep in (("png", shown), ("svg", shown and keep_svg)):
+                path = os.path.join(png_dir, f"{f['stem']}{suffix}.{ext}")
+                if not keep and os.path.exists(path):
+                    os.remove(path)
+                    gone.append((path, None if shown else theme))
     return gone
+
+
+def keep_svgs(diagrams, png_dir):
+    """Copy each SVG from the build folder to png_dir, beside its PNG, under the same name."""
+    for f in diagrams:
+        for svg in f["files"].values():
+            shutil.copyfile(svg, os.path.join(png_dir, os.path.basename(svg)))
 
 
 def print_blocks(diagrams, doc, themes):
@@ -177,7 +193,7 @@ def build(opts, work):
     except diagramlib.DiagramError as err:
         print(f"diagram error: {err}")
         return 1
-    kept = f" in {work}" if opts["out"] else ""
+    kept = "" if doc else f" in {work}"
     print(f"built {len(diagrams)} diagram(s){kept}: " + ", ".join(f["stem"] for f in diagrams))
     if not opts["png"]:
         return 0
@@ -188,8 +204,10 @@ def build(opts, work):
     words = " and ".join(themes)
     print(f"{len(diagrams) * len(themes)} PNG(s), {words}, in {png_dir}. Look at each one once before you ship it.")
     if doc:
-        for path in drop_other_theme(diagrams, png_dir, themes):
-            print(f"removed {path}: {doc} now shows {words} only")
+        if opts["keep_svg"]:
+            keep_svgs(diagrams, png_dir)
+        for path, hidden in tidy_folder(diagrams, png_dir, themes, opts["keep_svg"]):
+            print(f"removed {path}: " + (f"{doc} now shows {words} only" if hidden else "--keep-svg is off"))
         print_blocks(diagrams, doc, themes)
     return 0
 
@@ -202,17 +220,19 @@ def main(argv):
     if mistake:
         print(f"render.py: {mistake}")
         return 2
-    keep = opts["out"]
-    if keep:
+    doc = opts["doc"]
+    if doc:
+        work = tempfile.mkdtemp(prefix="readable-diagrams-")
+    else:
+        work = opts["out"]
         try:
-            os.makedirs(keep, exist_ok=True)
+            os.makedirs(work, exist_ok=True)
         except OSError as err:
-            return cannot_make(keep, err)
-    work = keep or tempfile.mkdtemp(prefix="readable-diagrams-")
+            return cannot_make(work, err)
     try:
         return build(opts, work)
     finally:
-        if not keep:
+        if doc:
             shutil.rmtree(work, ignore_errors=True)
 
 

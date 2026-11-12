@@ -202,7 +202,7 @@ python3 -I SKILL/scripts/render.py SCRATCH/spec.py --doc docs/design.md
 
 With `--doc`, the PNGs go next to the doc, in `docs/readable-diagrams/design/`: a `readable-diagrams` folder with one subfolder for each doc, so two docs in one folder keep their pictures apart and each doc's pictures stay together. The SVG and Mermaid files are built in a temporary folder that `render.py` removes when it ends, and the spec goes inside each PNG, so no copy of the spec stays on the laptop. To change a picture later, Claude takes the spec out of one of its PNGs with `embed_spec.py extract` and builds again.
 
-`--theme` is light, the white picture, unless it says `dark` or `both`. Claude does not ask which one to make. Add `--out DIR` to keep the build files in DIR for a look.
+`--theme` is light, the white picture, unless it says `dark` or `both`. Claude does not ask which one to make. `--keep-svg` is off unless given. With it, each SVG stays beside its PNG in `docs/readable-diagrams/design/`, under the same name, and a build without it removes the SVGs an earlier build kept, so a kept SVG never goes stale.
 
 `doctor.sh` checks Python, `rsvg-convert` and the two fonts. It prints one line per check, and a → line under anything missing. For `rsvg-convert`, that line is `brew install librsvg`. The doctor changes nothing.
 
@@ -339,7 +339,7 @@ The two skill pictures on this page are such blocks. Their PNGs sit in `sample/d
 | `scripts/embed_spec.py` | Python, standard library only | Puts a spec inside a PNG as a `tEXt` chunk and gets it back. `embed` reads the PNG before it writes, and a PNG never holds two specs. `extract` prints the spec byte for byte |
 | `scripts/doctor.sh` | bash | Checks the Mac: Python, `rsvg-convert` and the fonts |
 | `scripts/example_spec.py` | Python | A bigger example: one data flow and two sequences |
-| `scripts/tests/test_diagramlib.py` | Python | 49 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a theme change removes the other theme's pictures, a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, with no build file kept, each PNG carries its spec once, and the Markdown fits one theme or both |
+| `scripts/tests/test_diagramlib.py` | Python | 53 tests: the example and the sample build, each SVG is complete on its own in both themes, the checks refuse what they should, `box_height` is the least height a box accepts, an elbow bends where it should and a diagonal is refused, a zone subtitle stays clear of its title, the doctor names `rsvg-convert`, a theme change removes the other theme's pictures, a doc gets its pictures in `readable-diagrams/<doc name>/`, light by default, with no build file kept unless `--keep-svg` is given, each PNG carries its spec once, and the Markdown fits one theme or both |
 | `scripts/tests/test_embed_spec.py` | Python | 23 tests: the spec comes back byte for byte, every other chunk stays untouched, a second embed replaces the first, a PNG that already holds the spec is not written, a PNG that holds two specs ends with one, and a file that is not a PNG gets a plain message |
 | `scripts/tests/pngs.py` | Python | A PNG small enough to build by hand, for the tests that need a real one |
 | `references/layout.md` | Markdown | Coordinates and sizes for laying out a new diagram |

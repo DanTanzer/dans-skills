@@ -73,7 +73,7 @@ Before the first export, Claude runs the skill's `scripts/doctor.sh` to check th
 
 ## Try it
 
-Ask Claude in your own words. The pictures are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each picture carries the spec that drew it, and Claude keeps no other copy of it on your laptop.
+Ask Claude in your own words. The pictures are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each picture carries the spec that drew it, and Claude keeps no other copy of it on your laptop. Ask Claude to keep the SVGs, and each SVG stays beside its PNG.
 
 To draw the sample that comes with the skill:
 

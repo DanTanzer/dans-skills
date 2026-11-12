@@ -313,17 +313,43 @@ class DocFolderTest(unittest.TestCase):
         self.assertEqual(["spec.py"], os.listdir(self.scratch))
 
     def test_a_check_build_without_pngs_keeps_nothing(self):
-        code, said = self.run_render(self.spec, "--doc", self.doc, "--no-png")
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--no-png", "--keep-svg")
         self.assertEqual(0, code, said)
         self.assertIn("built 2 diagram(s): data-flow, build-sequence", said)
         self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
 
-    def test_the_build_files_are_kept_when_out_is_given_too(self):
-        keep = os.path.join(self.scratch, "build")
-        code, said = self.run_render(self.spec, "--doc", self.doc, "--out", keep)
+    def test_the_svgs_are_not_kept_unless_asked_for(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both")
         self.assertEqual(0, code, said)
-        self.assertEqual(["build-sequence.mmd", "build-sequence.svg", "data-flow.mmd", "data-flow.svg"], sorted(os.listdir(keep)))
+        self.assertEqual([], [n for n in os.listdir(self.pictures) if n.endswith(".svg")])
+
+    def test_keep_svg_keeps_each_svg_beside_its_png_under_the_same_name(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "both", "--keep-svg")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["build-sequence-dark.png", "build-sequence-dark.svg", "build-sequence.png",
+                          "build-sequence.svg", "data-flow-dark.png", "data-flow-dark.svg", "data-flow.png",
+                          "data-flow.svg"], sorted(os.listdir(self.pictures)))
+        self.assertTrue(read(os.path.join(self.pictures, "data-flow-dark.svg")).lstrip().startswith("<svg"))
+
+    def test_a_build_without_keep_svg_removes_the_svgs_an_earlier_build_kept(self):
+        self.run_render(self.spec, "--doc", self.doc, "--keep-svg")
+        code, said = self.run_render(self.spec, "--doc", self.doc)
+        self.assertEqual(0, code, said)
         self.assertEqual(["build-sequence.png", "data-flow.png"], sorted(os.listdir(self.pictures)))
+        self.assertIn("data-flow.svg: --keep-svg is off", said)
+
+    def test_a_theme_change_removes_the_other_themes_svg_with_its_png(self):
+        self.run_render(self.spec, "--doc", self.doc, "--theme", "both", "--keep-svg")
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--theme", "light", "--keep-svg")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["build-sequence.png", "build-sequence.svg", "data-flow.png", "data-flow.svg"],
+                         sorted(os.listdir(self.pictures)))
+
+    def test_doc_and_out_together_are_refused(self):
+        code, said = self.run_render(self.spec, "--doc", self.doc, "--out", os.path.join(self.scratch, "build"))
+        self.assertEqual(2, code)
+        self.assertIn("use --doc or --out, not both", said)
+        self.assertEqual(["Design Notes.md"], os.listdir(self.docs))
 
     @unittest.skipUnless(shutil.which("git"), "needs git")
     def test_git_sees_the_doc_and_its_pictures_and_nothing_else(self):

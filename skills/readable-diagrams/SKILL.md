@@ -19,7 +19,7 @@ Do not use it for charts of numbers (that is a chart, not a diagram), for one-of
 
 1. The PNGs the doc shows, in a subfolder next to the doc: `readable-diagrams/design/` for `design.md`, so `docs/readable-diagrams/design/` for `docs/design.md`. Two docs in one folder share `readable-diagrams/`, and each keeps its pictures together in its own subfolder. `<stem>.png` is light (white) and `<stem>-dark.png` is dark. The default is light; the doc gets dark or both when the user asks. Each is 1840 pixels wide (a 920 pixel card at 2x), with the arrow legend inside the picture. Each also carries the spec that drew it, as a `tEXt` chunk named `readable-diagrams-spec`: `render.py` puts it there on every export, so the picture and its source are committed together.
 2. In the doc, the Markdown that `render.py` prints for each diagram. With both themes, a `<picture>` block that shows the dark PNG in dark mode; with one theme, a plain Markdown image. Then a closed `<details>` block with the same diagram as Mermaid text, so GitHub readers can edit it.
-3. Nothing else is kept. The build writes the SVGs and the Mermaid text in a temporary folder, and `render.py` removes that folder when it ends. The spec lives inside the PNGs, so no copy of it stays on the laptop.
+3. Nothing else is kept. The build writes the SVGs and the Mermaid text in a temporary folder, and `render.py` removes that folder when it ends. The spec lives inside the PNGs, so no copy of it stays on the laptop. The one exception is the option `--keep-svg`, off by default: it keeps each SVG beside its PNG.
 
 ## How to make one
 
@@ -33,7 +33,7 @@ Below, `scripts/` and `sample/` are in this skill's folder, and DOC.md is the us
 6. **Paste the Markdown.** Paste each diagram's Markdown where its picture goes, straight from the output; do not save it to a file. A sequence gets its Mermaid text from the build. A data flow gets a details block only when its diagram has `mermaid` text: write a short Mermaid flowchart by hand, or leave the block out.
 7. **Commit the doc and its `readable-diagrams/<doc name>/` folder.** Every PNG carries the spec that drew it, so the source is committed with the pictures, and no other file is kept. A PNG drawn before the skill did this takes its spec with `python3 -I scripts/embed_spec.py embed PICTURE.png SCRATCH/spec.py`, which reads the PNG first and writes only when its spec is missing or different.
 
-To change the theme later, export again with the new `--theme`: the build removes the doc's PNGs in the theme it no longer shows. To keep the SVGs and the Mermaid files for a look, add `--out DIR`: the build files stay in DIR.
+To change the theme later, export again with the new `--theme`: the build removes the doc's PNGs in the theme it no longer shows. To keep the SVGs, add `--keep-svg`: each SVG stays beside its PNG, under the same name. It is off by default, and a build without it removes the SVGs an earlier build kept, so a kept SVG never goes stale. Add it only when the user asks.
 
 ## The sample
 
