@@ -464,15 +464,15 @@ def check_alt(alt):
 
 def picture_block(stem, alt, folder, mermaid=None, themes=BOTH):
     """The Markdown that shows a diagram, then its Mermaid text in a closed block. With both themes, a <picture> that
-    shows the dark PNG in dark mode and the light one otherwise. With one theme, a plain Markdown image of its PNG."""
+    shows the dark SVG in dark mode and the light one otherwise. With one theme, a plain Markdown image of the SVG."""
     check_alt(alt)
     if set(themes) == set(BOTH):
-        out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.png">\n'
-               f'  <img src="{folder}/{stem}.png" alt="{alt}">\n</picture>\n')
+        out = (f'<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="{folder}/{stem}-dark.svg">\n'
+               f'  <img src="{folder}/{stem}.svg" alt="{alt}">\n</picture>\n')
     else:
         (theme,) = themes
         shown = alt.replace("[", "\\[").replace("]", "\\]")
-        out = f"![{shown}]({folder}/{stem}{THEME_SUFFIX[theme]}.png)\n"
+        out = f"![{shown}]({folder}/{stem}{THEME_SUFFIX[theme]}.svg)\n"
     if mermaid:
         out += ("\n<details>\n<summary>The same diagram as Mermaid text (open it to edit)</summary>\n\n"
                 f"```mermaid\n{mermaid}\n```\n\n</details>\n")

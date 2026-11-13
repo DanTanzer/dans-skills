@@ -6,7 +6,7 @@ Claude Code skills by Dan Tanzer.
 
 | Skill | What it does |
 |---|---|
-| `readable-diagrams` | Draws data flow and sequence pictures as hand-laid-out SVG. Exports each as a light (white) PNG by default, or as a dark PNG, or both. Keeps Mermaid text under each picture as a text fallback. Each PNG carries the spec that drew it and its Mermaid text, so the picture is the whole source. |
+| `readable-diagrams` | Draws hand-laid-out SVG diagrams and embeds the authoritative Python spec and Mermaid source in each final SVG. Includes a one-time helper for recovering sources from legacy PNGs. |
 
 Before and after, for the same data flow. Click a picture for the step-by-step walkthrough.
 
@@ -61,19 +61,15 @@ npx skills add DanTanzer/dans-skills --skill readable-diagrams -a claude-code
 
 ## Before the first picture
 
-The PNG export uses `rsvg-convert`, from librsvg. Install it once with Homebrew:
+The SVG workflow uses Python's standard library and does not require `rsvg-convert`.
 
-```bash
-brew install librsvg
-```
-
-Before the first export, Claude runs the skill's `scripts/doctor.sh` to check the Mac.
-
-[`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) walks through one build, step by step, with a small sample.
+[`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) is a historical walkthrough of the legacy PNG workflow; the installed skill contains the current SVG-first instructions.
 
 ## Try it
 
-Ask Claude in your own words. The pictures are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each picture carries the spec that drew it and its Mermaid text, so the picture is the one file to keep. Ask Claude to keep the SVGs, and each SVG stays beside its PNG.
+Ask Claude in your own words. The SVGs are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each SVG carries the Python spec and Mermaid source in metadata, so the SVG is the final artifact to keep.
+
+To migrate legacy PNG diagrams in a folder, run `python3 -I scripts/migrate_png_to_svg.py PATH/TO/FOLDER` from the installed skill directory. It recovers embedded sources and generates an SVG when the matching SVG is missing. It leaves the PNG in place; only PNGs with readable-diagrams source metadata can be migrated. Run this only on PNGs whose embedded Python source you trust, because rendering executes that source. The helper is an import/migration path, not a way to synchronize later edits made directly to an SVG.
 
 To draw the sample that comes with the skill:
 
@@ -95,20 +91,20 @@ Use readable-diagrams to redraw the Mermaid diagram in @README.md.
 
 ## How a picture gets made
 
-Claude writes a small Python spec. The skill draws the spec as an SVG, `rsvg-convert` draws the SVG as a PNG, and the spec and the Mermaid text go inside the PNG, so each picture carries its own source. The Mermaid text also sits under the picture in the doc, ready to edit.
+Claude writes a small Python spec. The skill draws the spec as an SVG and embeds both the Python and Mermaid sources in the SVG metadata. The SVG is kept beside the doc, and the Mermaid text also sits under the picture in the doc, ready to edit. For later changes, update the Python spec and Mermaid together and rerender; editing the SVG image alone cannot update either source.
 
 The data flow of one build, drawn by the skill:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.png">
-  <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="800" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in readable-diagrams/design next to design.md with the spec and the Mermaid text inside, and Claude looks at each PNG.">
+  <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="800" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py builds an SVG for each diagram and theme, embeds the spec and Mermaid source in each SVG, and saves the SVGs beside design.md.">
 </picture>
 
 The same build, in order:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/build-sequence-dark.png">
-  <img src="skills/readable-diagrams/sample/diagrams/build-sequence.png" width="800" alt="One build, in order. Claude writes the spec in its scratch folder and runs render.py. render.py draws an SVG for each diagram, then runs rsvg-convert once for each, which writes the PNG into readable-diagrams/design next to the doc. render.py puts the spec and the Mermaid text inside each PNG and removes its temporary files. Claude looks at each PNG, then pastes the Markdown into the doc.">
+  <img src="skills/readable-diagrams/sample/diagrams/build-sequence.png" width="800" alt="One build, in order. Claude writes the spec in its scratch folder and runs render.py. render.py builds the SVGs, embeds the spec and Mermaid source in each, saves them beside the doc, and prints Markdown to paste into the doc.">
 </picture>
 
 [`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) walks through every step, with the Mermaid text for both pictures.

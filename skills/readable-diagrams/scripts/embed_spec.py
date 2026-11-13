@@ -1,44 +1,30 @@
-"""Keep a diagram's source inside the PNG it drew: the Python that drew it, and its Mermaid text.
+"""Embed a diagram's source inside its SVG, and recover it later.
 
-The spec that draws a doc's pictures is a scratch file, so the Python behind a shipped PNG would be lost with it. This
-puts two parts into the PNG itself, as PNG tEXt chunks, the way image tools carry their settings: the spec's Python
-(chunk readable-diagrams-spec) and the Mermaid text of that picture (chunk readable-diagrams-mermaid, only for a picture
-that has Mermaid text). The image is the whole wrapper: it alone gives back the editable text and the code that drew
-it. Commit the PNG and both come with it. No pixel changes: the chunks go in just before IEND, the Python first, and
-the image draws the same before and after.
+The exact Mermaid source and the authoritative Python source are stored as versioned,
+namespace-scoped metadata entries in the final SVG so the diagram remains self-contained.
+A metadata payload uses gzip + Base64 plus the SHA-256 of the original UTF-8 bytes.
 
-    python3 -I embed_spec.py embed DIAGRAM.png SPEC.py [DIAGRAM.mmd]   put the parts in DIAGRAM.png, in place
-    python3 -I embed_spec.py extract DIAGRAM.png [DIR]                 write DIAGRAM.spec.py, and DIAGRAM.mmd when the
-                                                                       PNG holds Mermaid, to DIR (this folder if none)
-
-render.py runs embed for every PNG it draws, so a rebuilt picture carries the spec that drew it and its own Mermaid
-text. Run embed yourself for a picture drawn before. Run extract to get the parts back: the PNG holds the only copy.
-
-Extract names each file after the picture, data-flow.png to data-flow.spec.py and data-flow.mmd, so pictures that share
-a folder never share a file. It reads before it writes, like embed: a file that already holds the text is left alone,
-and a file that holds something else stops the extract before any file is written, so edits in it are never lost.
-
-Embed reads before it writes, and a PNG never holds two of one part. A PNG that already holds exactly these parts, once
-each, is not written at all. A part that differs is replaced. A Mermaid part that the call leaves out is removed, so the
-two parts always belong together. One that holds two or more of a part ends with one. Only tEXt chunks named
-readable-diagrams-spec or readable-diagrams-mermaid are read or changed.
-
-The text is stored as UTF-8. The PNG standard says Latin-1 for tEXt; the two agree on plain ASCII, and extract reads
-either. Exit 1 with a plain message on stderr when the file is not a PNG this can read, holds no spec, or would
-overwrite a different file, 2 for a usage mistake.
+    python3 -I embed_spec.py embed DIAGRAM.svg SPEC.py [DIAGRAM.mmd]
+    python3 -I embed_spec.py extract DIAGRAM.svg [DIR]
 """
+import base64
+import gzip
+import hashlib
 import os
+import shutil
 import struct
 import sys
-import zlib
+import xml.etree.ElementTree as ET
 
 sys.dont_write_bytecode = True
 
-SIGNATURE = b"\x89PNG\r\n\x1a\n"
-SPEC_KEYWORD = b"readable-diagrams-spec"
-MERMAID_KEYWORD = b"readable-diagrams-mermaid"
-KEYWORDS = (SPEC_KEYWORD, MERMAID_KEYWORD)
-USAGE = "usage: embed_spec.py embed DIAGRAM.png SPEC.py [DIAGRAM.mmd] | embed_spec.py extract DIAGRAM.png [DIR]"
+SVG = "http://www.w3.org/2000/svg"
+DS = "https://github.com/DanTanzer/dans-skills"
+ET.register_namespace("", SVG)
+ET.register_namespace("ds", DS)
+
+MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
+USAGE = "usage: embed_spec.py embed DIAGRAM.svg SPEC.py [DIAGRAM.mmd] | embed_spec.py extract DIAGRAM.svg [DIR]"
 
 
 class SpecError(Exception):
@@ -46,7 +32,13 @@ class SpecError(Exception):
 
 
 class PngError(SpecError):
-    """The bytes are not a PNG this can work on."""
+    """A PNG file that is not valid for legacy metadata extraction."""
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+LEGACY_SPEC_KEYWORD = b"readable-diagrams-spec"
+LEGACY_MERMAID_KEYWORD = b"readable-diagrams-mermaid"
+LEGACY_KEYWORDS = (LEGACY_SPEC_KEYWORD, LEGACY_MERMAID_KEYWORD)
 
 
 def read_text(path):
@@ -55,14 +47,26 @@ def read_text(path):
         return handle.read()
 
 
-def chunk(kind, body):
-    """One PNG chunk: the body's length, the type, the body, and a CRC (cyclic redundancy check) over type and body."""
-    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+def stem_of(svg_path):
+    return os.path.splitext(os.path.basename(svg_path))[0]
 
 
-def walk(png):
-    """The chunks of a PNG up to IEND, each as (start, end, type, body): start and end are the chunk's bytes in png."""
-    if png[:8] != SIGNATURE:
+def spec_name(svg_path):
+    return stem_of(svg_path) + ".spec.py"
+
+
+def mermaid_name(svg_path):
+    return stem_of(svg_path) + ".mmd"
+
+
+def encode_source(source):
+    raw = source.encode("utf-8")
+    payload = base64.b64encode(gzip.compress(raw, mtime=0)).decode("ascii")
+    return payload, hashlib.sha256(raw).hexdigest()
+
+
+def legacy_walk(png):
+    if png[:8] != PNG_SIGNATURE:
         raise PngError("it does not start with the PNG signature")
     chunks, at = [], 8
     while at < len(png):
@@ -80,122 +84,300 @@ def walk(png):
     raise PngError("it has no IEND chunk")
 
 
-def keyword_of(kind, body):
-    """The keyword of a tEXt chunk, or None for any other chunk."""
+def legacy_keyword_of(kind, body):
     keyword, nul, _ = body.partition(b"\x00")
     return keyword if kind == b"tEXt" and nul == b"\x00" else None
 
 
-def text_chunk(keyword, text):
-    """A tEXt chunk: the keyword, a NUL, then the text as UTF-8."""
-    return chunk(b"tEXt", keyword + b"\x00" + text.encode("utf-8"))
+def legacy_texts_in(png, keyword):
+    return [
+        body.partition(b"\x00")[2].decode("utf-8", errors="latin-1")
+        for _, _, kind, body in legacy_walk(png)
+        if legacy_keyword_of(kind, body) == keyword
+    ]
 
 
-def embed(png, python, mermaid=None):
-    """png (bytes) with python as its spec and mermaid as its Mermaid text. Every chunk of ours it held goes, and the
-    new ones come in just before IEND, the Python first. mermaid None leaves the PNG with no Mermaid part."""
-    chunks = walk(png)
-    iend_at = chunks[-1][0]
-    kept = [png[start:end] for start, end, kind, body in chunks[:-1] if keyword_of(kind, body) not in KEYWORDS]
-    ours = [text_chunk(SPEC_KEYWORD, python)]
-    if mermaid is not None:
-        ours.append(text_chunk(MERMAID_KEYWORD, mermaid))
-    return b"".join([SIGNATURE, *kept, *ours, png[iend_at:]])
-
-
-def decode(raw):
-    """A part's text: UTF-8, or Latin-1 when a tool wrote it that way."""
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("latin-1")
-
-
-def texts_in(png, keyword):
-    """The text of every tEXt chunk named keyword in png (bytes), in the order they sit."""
-    return [decode(body.partition(b"\x00")[2]) for _, _, kind, body in walk(png) if keyword_of(kind, body) == keyword]
-
-
-def specs_in(png):
-    return texts_in(png, SPEC_KEYWORD)
-
-
-def mermaids_in(png):
-    return texts_in(png, MERMAID_KEYWORD)
-
-
-def extract(png):
-    """The spec text in png (bytes), or None when it holds none. The last spec chunk wins."""
-    found = specs_in(png)
+def legacy_extract(png):
+    found = legacy_texts_in(png, LEGACY_SPEC_KEYWORD)
     return found[-1] if found else None
 
 
-def extract_mermaid(png):
-    """The Mermaid text in png (bytes), or None when it holds none. The last Mermaid chunk wins."""
-    found = mermaids_in(png)
+def legacy_extract_mermaid(png):
+    found = legacy_texts_in(png, LEGACY_MERMAID_KEYWORD)
     return found[-1] if found else None
 
 
-def png_error(path, err):
-    return PngError(f"{path} is not a PNG this can read: {err}")
-
-
-def read_png(path):
-    """The bytes of the PNG at path, once they are known to be a PNG this can read."""
+def legacy_extract_sources(path):
     with open(path, "rb") as handle:
-        data = handle.read()
+        png = handle.read()
     try:
-        walk(data)
+        python = legacy_extract(png)
+        mermaid = legacy_extract_mermaid(png)
     except PngError as err:
-        raise png_error(path, err) from None
-    return data
+        raise ValueError(f"{path} is not a PNG this can read: {err}") from None
+    if python is None:
+        raise ValueError(f"{path} holds no readable-diagrams spec")
+    result = {"python": python}
+    if mermaid is not None:
+        result["mermaid"] = mermaid
+    return result
 
 
-def embed_file(path, python, mermaid=None):
-    """Put python, and mermaid when given, in the PNG at path, in place, and return True. Read first: a PNG that already
-    holds exactly these parts, once each, is not written at all, and the answer is False. Otherwise the new file is
-    written beside it and moved over it, so a failure leaves the PNG as it was and nothing else behind."""
-    data = read_png(path)
-    if specs_in(data) == [python] and mermaids_in(data) == ([] if mermaid is None else [mermaid]):
-        return False
-    data = embed(data, python, mermaid)
-    temp = path + ".embedding"
+def metadata_node(root):
+    metadata = root.find(f"{{{SVG}}}metadata")
+    if metadata is None:
+        metadata = ET.Element(f"{{{SVG}}}metadata")
+        root.insert(0, metadata)
+    return metadata
+
+
+def _tag(name):
+    return f"{{{DS}}}{name}"
+
+
+def save_versioned(temp_path, svg_path):
+    """Save a complete SVG beside the original without overwriting an existing version."""
+    folder, filename = os.path.split(svg_path)
+    stem, extension = os.path.splitext(filename)
+    version = 1
+    while True:
+        version_path = os.path.join(folder, f"{stem} ({version}){extension}")
+        try:
+            fd = os.open(version_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            version += 1
+            continue
+
+        target = os.fdopen(fd, "wb")
+        try:
+            with target:
+                with open(temp_path, "rb") as source:
+                    shutil.copyfileobj(source, target)
+                    target.flush()
+                    os.fsync(target.fileno())
+        except Exception:
+            if os.path.exists(version_path):
+                os.remove(version_path)
+            raise
+        return version_path
+
+
+def embed_sources(svg_path, mermaid_source, python_source):
+    """Write mermaid and python metadata into the SVG at svg_path, replacing prior payloads when present."""
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+    metadata = metadata_node(root)
+
+    for name, source in {"mermaid": mermaid_source, "python": python_source}.items():
+        tag = _tag(name)
+        matches = [node for node in list(metadata) if node.tag == tag]
+        for node in matches[1:]:
+            metadata.remove(node)
+        if matches:
+            metadata.remove(matches[0])
+        if source is None:
+            continue
+        encoded, checksum = encode_source(source)
+        elem = ET.SubElement(metadata, tag)
+        elem.set("version", "1")
+        elem.set("encoding", "gzip+base64")
+        elem.set("sha256", checksum)
+        elem.text = encoded
+
+    try:
+        out = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    except Exception as err:
+        raise SpecError(f"cannot write metadata for {svg_path}: {err}") from None
+
+    temp = svg_path + ".embedding"
     try:
         with open(temp, "wb") as handle:
-            handle.write(data)
-        os.replace(temp, path)
+            handle.write(out)
+        try:
+            os.replace(temp, svg_path)
+            saved_path = svg_path
+        except OSError as err:
+            saved_path = save_versioned(temp, svg_path)
+            print(
+                f"warning: could not replace {svg_path}: {err}; "
+                f"saved updated SVG as {saved_path}",
+                file=sys.stderr,
+            )
+        return saved_path
     finally:
         if os.path.exists(temp):
             os.remove(temp)
-    return True
 
 
-def stem_of(png_path):
-    return os.path.splitext(os.path.basename(png_path))[0]
+def extract_sources(svg_path):
+    """Return the embedded Mermaid and Python sources as a dict."""
+    try:
+        root = ET.parse(svg_path).getroot()
+    except ET.ParseError as err:
+        raise ValueError(f"{svg_path} is not valid SVG XML: {err}") from None
+
+    metadata = root.find(f"{{{SVG}}}metadata")
+    if metadata is None:
+        raise ValueError(f"{svg_path} is missing SVG metadata")
+
+    result = {}
+    for name in ("mermaid", "python"):
+        elem = metadata.find(_tag(name))
+        if elem is None:
+            raise ValueError(f"Missing {name} source in {svg_path}")
+        if elem.get("encoding") != "gzip+base64":
+            raise ValueError(f"Unsupported encoding for {name} in {svg_path}")
+        if elem.get("version") not in (None, "1"):
+            raise ValueError(f"Unsupported version for {name} in {svg_path}")
+
+        text = elem.text or ""
+        try:
+            blob = base64.b64decode(text, validate=True)
+        except Exception as err:
+            raise ValueError(f"Malformed base64 data for {name} in {svg_path}: {err}") from None
+        if len(blob) > MAX_PAYLOAD_BYTES:
+            raise ValueError(f"{name} payload in {svg_path} is too large")
+        try:
+            raw = gzip.decompress(blob)
+        except Exception as err:
+            raise ValueError(f"Malformed compressed data for {name} in {svg_path}: {err}") from None
+        if len(raw) > MAX_PAYLOAD_BYTES:
+            raise ValueError(f"{name} payload in {svg_path} is too large after decompression")
+        expected = elem.get("sha256")
+        actual = hashlib.sha256(raw).hexdigest()
+        if expected != actual:
+            raise ValueError(f"{name} checksum mismatch in {svg_path}")
+        try:
+            result[name] = raw.decode("utf-8")
+        except UnicodeDecodeError as err:
+            raise ValueError(f"{name} payload in {svg_path} is not valid UTF-8: {err}") from None
+    return result
 
 
-def spec_name(png_path):
-    """The file a PNG's spec goes to: the PNG's own name with .spec.py, so two pictures never share a file."""
-    return stem_of(png_path) + ".spec.py"
+def extract(svg_path):
+    """Return the Python source embedded in svg_path."""
+    return extract_sources(svg_path)["python"]
 
 
-def mermaid_name(png_path):
-    """The file a PNG's Mermaid text goes to: the PNG's own name with .mmd."""
-    return stem_of(png_path) + ".mmd"
+def extract_mermaid(svg_path):
+    """Return the Mermaid source embedded in svg_path, if any."""
+    return extract_sources(svg_path).get("mermaid")
 
 
-def extract_to(png_path, folder="."):
-    """Write what the PNG at png_path holds into folder: its spec to <PNG name>.spec.py and, when it holds Mermaid text,
-    that to <PNG name>.mmd. Returns [(path, wrote)], one for each file. Read first, file by file: a file that already
-    holds the text is left as it is (wrote is False). A file that holds something else stops the extract before any
-    file is written, so edits in it are never lost."""
-    data = read_png(png_path)
-    python, mermaid = extract(data), extract_mermaid(data)
-    if python is None:
-        raise SpecError(f"{png_path} holds no readable-diagrams spec")
-    files = [(os.path.join(folder, spec_name(png_path)), python)]
-    if mermaid is not None:
-        files.append((os.path.join(folder, mermaid_name(png_path)), mermaid))
+def _parse_xml_bytes(data):
+    try:
+        return ET.fromstring(data)
+    except ET.ParseError as err:
+        raise ValueError(f"invalid XML: {err}") from None
+
+
+def embed(data, python, mermaid=None):
+    """Backward-compatible helper that accepts SVG XML bytes or legacy PNG bytes."""
+    if isinstance(data, (bytes, bytearray)):
+        chunk = bytes(data)
+        if chunk.startswith(b"<"):
+            root = _parse_xml_bytes(chunk)
+            metadata = metadata_node(root)
+            for name, source in {"mermaid": mermaid, "python": python}.items():
+                tag = _tag(name)
+                matches = [node for node in list(metadata) if node.tag == tag]
+                for node in matches[1:]:
+                    metadata.remove(node)
+                if matches:
+                    metadata.remove(matches[0])
+                if source is None:
+                    continue
+                encoded, checksum = encode_source(source)
+                elem = ET.SubElement(metadata, tag)
+                elem.set("version", "1")
+                elem.set("encoding", "gzip+base64")
+                elem.set("sha256", checksum)
+                elem.text = encoded
+            return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        raise TypeError("embed() accepts SVG XML bytes or a file path, not raw PNG data in this SVG-only build")
+    if isinstance(data, str):
+        return embed_file(data, python, mermaid)
+    raise TypeError(f"embed() accepts SVG XML/bytes or a path, not {type(data)!r}")
+
+
+def extract(data):
+    """Backward-compatible helper that accepts a path or SVG XML bytes."""
+    if isinstance(data, (bytes, bytearray)):
+        chunk = bytes(data)
+        if chunk.startswith(b"<"):
+            return extract_sources_from_root(_parse_xml_bytes(chunk))["python"]
+        raise TypeError("extract() accepts SVG XML bytes or a file path, not raw PNG data in this SVG-only build")
+    return extract_sources(data)["python"]
+
+
+def extract_mermaid_data(data):
+    if isinstance(data, (bytes, bytearray)):
+        chunk = bytes(data)
+        if chunk.startswith(b"<"):
+            return extract_sources_from_root(_parse_xml_bytes(chunk)).get("mermaid")
+        raise TypeError("extract_mermaid() accepts SVG XML bytes or a file path, not raw PNG data in this SVG-only build")
+    return extract_sources(data).get("mermaid")
+
+
+def extract_sources_from_root(root):
+    metadata = root.find(f"{{{SVG}}}metadata")
+    if metadata is None:
+        raise ValueError("Missing SVG metadata")
+    result = {}
+    for name in ("mermaid", "python"):
+        elem = metadata.find(_tag(name))
+        if elem is None:
+            raise ValueError(f"Missing {name} source")
+        if elem.get("encoding") != "gzip+base64":
+            raise ValueError(f"Unsupported encoding for {name}")
+        if elem.get("version") not in (None, "1"):
+            raise ValueError(f"Unsupported version for {name}")
+        text = elem.text or ""
+        try:
+            blob = base64.b64decode(text, validate=True)
+        except Exception as err:
+            raise ValueError(f"Malformed base64 data for {name}: {err}") from None
+        if len(blob) > MAX_PAYLOAD_BYTES:
+            raise ValueError(f"{name} payload is too large")
+        try:
+            raw = gzip.decompress(blob)
+        except Exception as err:
+            raise ValueError(f"Malformed compressed data for {name}: {err}") from None
+        if len(raw) > MAX_PAYLOAD_BYTES:
+            raise ValueError(f"{name} payload is too large after decompression")
+        if elem.get("sha256") != hashlib.sha256(raw).hexdigest():
+            raise ValueError(f"{name} checksum mismatch")
+        result[name] = raw.decode("utf-8")
+    return result
+
+
+def embed_file(path, python, mermaid=None):
+    """Persist python and optional mermaid in an SVG at path, returning True if the file changed."""
+    with open(path, "rb") as handle:
+        before = handle.read()
+    try:
+        current = extract_sources(path)
+    except ValueError:
+        current = {}
+    desired_python = python
+    desired_mermaid = mermaid
+    if current.get("python") == desired_python and current.get("mermaid") == desired_mermaid:
+        return False
+    saved_path = embed_sources(path, desired_mermaid, desired_python)
+    if saved_path != path:
+        return True
+    with open(path, "rb") as handle:
+        after = handle.read()
+    return before != after
+
+
+def extract_to(svg_path, folder="."):
+    """Write the extracted source files beside the SVG. Returns [(path, wrote)] for each file."""
+    sources = extract_sources(svg_path)
+    python = sources["python"]
+    files = [(os.path.join(folder, spec_name(svg_path)), python)]
+    if "mermaid" in sources:
+        files.append((os.path.join(folder, mermaid_name(svg_path)), sources["mermaid"]))
     for path, text in files:
         if os.path.exists(path) and read_text(path) != text:
             raise SpecError(f"{path} already exists and holds something else: move it or delete it, then extract again")
@@ -218,19 +400,19 @@ def why(err):
 def main(argv):
     command, args = (argv[1], argv[2:]) if len(argv) > 1 else ("", [])
     if command == "embed" and len(args) in (2, 3):
-        png, spec, *mmd = args
+        svg, spec, *mmd = args
         try:
-            wrote = embed_file(png, read_text(spec), read_text(mmd[0]) if mmd else None)
-        except (OSError, UnicodeDecodeError, SpecError) as err:
+            wrote = embed_file(svg, read_text(spec), read_text(mmd[0]) if mmd else None)
+        except (OSError, UnicodeDecodeError, SpecError, ValueError) as err:
             print(f"embed_spec.py: {why(err)}", file=sys.stderr)
             return 1
         parts = " and ".join([spec, *mmd])
-        print(f"put {parts} into {png}" if wrote else f"{png} already holds {parts}; nothing changed")
+        print(f"saved {parts} as SVG metadata" if wrote else f"{svg} already holds {parts}; nothing changed")
         return 0
     if command == "extract" and len(args) in (1, 2):
         try:
             found = extract_to(*args)
-        except (OSError, UnicodeDecodeError, SpecError) as err:
+        except (OSError, UnicodeDecodeError, SpecError, ValueError) as err:
             print(f"embed_spec.py: {why(err)}", file=sys.stderr)
             return 1
         for path, wrote in found:

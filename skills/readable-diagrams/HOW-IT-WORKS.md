@@ -1,5 +1,7 @@
 # How readable-diagrams works
 
+> This walkthrough illustrates the legacy PNG workflow. For the current SVG-first workflow and the one-time PNG migration command, follow [SKILL.md](SKILL.md).
+
 `readable-diagrams` is a skill for Claude Code, Anthropic's coding tool. A skill is a folder of instructions and scripts that Claude follows. This skill turns a short Python file into diagrams: PNG (Portable Network Graphics) pictures, light (white) by default, or dark, or both.
 
 Mermaid is a common text format for diagrams. GitHub draws Mermaid text by itself. You go from Mermaid's two drawings below to the skill's drawings of the same two diagrams: a data flow and a sequence. All four pictures show the same build.
