@@ -164,7 +164,10 @@ def save_versioned(temp_path, svg_path):
 
 def embed_sources(svg_path, mermaid_source, python_source):
     """Write mermaid and python metadata into the SVG at svg_path, replacing prior payloads when present."""
-    tree = ET.parse(svg_path)
+    try:
+        tree = ET.parse(svg_path)
+    except ET.ParseError as err:
+        raise ValueError(f"{svg_path} is not valid SVG XML: {err}") from None
     root = tree.getroot()
     metadata = metadata_node(root)
 
@@ -224,6 +227,8 @@ def extract_sources(svg_path):
     for name in ("mermaid", "python"):
         elem = metadata.find(_tag(name))
         if elem is None:
+            if name == "mermaid":
+                continue
             raise ValueError(f"Missing {name} source in {svg_path}")
         if elem.get("encoding") != "gzip+base64":
             raise ValueError(f"Unsupported encoding for {name} in {svg_path}")
@@ -327,6 +332,8 @@ def extract_sources_from_root(root):
     for name in ("mermaid", "python"):
         elem = metadata.find(_tag(name))
         if elem is None:
+            if name == "mermaid":
+                continue
             raise ValueError(f"Missing {name} source")
         if elem.get("encoding") != "gzip+base64":
             raise ValueError(f"Unsupported encoding for {name}")

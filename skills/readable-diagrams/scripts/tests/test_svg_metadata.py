@@ -92,6 +92,17 @@ class SvgMetadataTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing SVG metadata'):
             embed_spec.extract_sources(self.path)
 
+    def test_mermaid_metadata_is_optional(self):
+        self.write_svg()
+        self.assertTrue(embed_spec.embed_file(self.path, "VALUE = 1\n"))
+        self.assertEqual({"python": "VALUE = 1\n"}, embed_spec.extract_sources(self.path))
+
+    def test_invalid_svg_fails_with_a_clear_error(self):
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("not SVG")
+        with self.assertRaisesRegex(ValueError, "not valid SVG XML"):
+            embed_spec.embed_file(self.path, "VALUE = 1\n")
+
     def test_extraction_is_safe_and_non_executing(self):
         self.write_svg()
         python = "import os\nprint('this should only be returned as text')\n"

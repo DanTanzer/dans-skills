@@ -1,6 +1,6 @@
 """Build a diagram spec and emit SVGs with embedded source metadata in one command.
 
-    python3 -I render.py SPEC.py --doc DOC.md [--theme light|dark|both] [--keep-svg]
+    python3 -I render.py SPEC.py --doc DOC.md [--theme light|dark|both]
     python3 -I render.py SPEC.py --out DIR [--theme light|dark|both]
 
 With --doc, the SVGs that DOC.md shows are written into readable-diagrams/<doc name>/ next to DOC.md,
@@ -62,14 +62,12 @@ def load_spec(path):
 
 
 def parse(args):
-    """SPEC.py, then --doc DOC.md, --out DIR, --theme THEME, and --keep-svg, in any order."""
-    opts = {"spec": None, "doc": None, "out": None, "theme": DEFAULT_THEME, "keep_svg": False}
+    """SPEC.py, then --doc DOC.md, --out DIR and --theme THEME, in any order."""
+    opts = {"spec": None, "doc": None, "out": None, "theme": DEFAULT_THEME}
     rest = list(args)
     while rest:
         word = rest.pop(0)
-        if word == "--keep-svg":
-            opts["keep_svg"] = True
-        elif word in ("--doc", "--out", "--theme"):
+        if word in ("--doc", "--out", "--theme"):
             if not rest:
                 return None, f"{word} needs a value"
             opts[word[2:]] = rest.pop(0)
@@ -84,7 +82,7 @@ def parse(args):
     if not opts["doc"] and not opts["out"]:
         return None, "say where the files go: --doc DOC.md, or --out DIR"
     if opts["doc"] and opts["out"]:
-        return None, "use --doc or --out, not both: --keep-svg keeps each SVG beside the doc's pictures"
+        return None, "use --doc or --out, not both"
     if opts["doc"] and not has_folder(opts["doc"]):
         return None, f"there is no folder for {opts['doc']}"
     return opts, None
