@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-The repository, its marketplace and its one plugin all share one name: `dans-skills`. Each skill is a folder under `skills/`.
+This repository contains the `dans-skills` marketplace and plugin. Each skill lives in its own folder under `skills/`.
 
 | Level | Name | Defined by | Where the name shows |
 |---|---|---|---|
@@ -11,7 +11,7 @@ The repository, its marketplace and its one plugin all share one name: `dans-ski
 | Plugin | `dans-skills` | `.claude-plugin/plugin.json` | `dans-skills@dans-skills`, the id you install |
 | Skill | `readable-diagrams` | `skills/readable-diagrams/SKILL.md` | `dans-skills:readable-diagrams` in Claude's skill list |
 
-A marketplace is a catalog of plugins. A plugin is what you install and turn on. A skill is one set of instructions that Claude follows. Here the marketplace lists one plugin, the repository itself, and that plugin carries every skill.
+The marketplace lists the repository's plugin. Install the plugin to use its skills.
 
 ```text
 dans-skills/                             repository, marketplace and plugin "dans-skills"
@@ -22,31 +22,46 @@ dans-skills/                             repository, marketplace and plugin "dan
 ├── .claude-plugin/
 │   ├── marketplace.json                 marks the repository as a marketplace that lists itself
 │   └── plugin.json                      marks the repository as a plugin: name, author, repository
+├── .githooks/
+│   └── pre-commit                       runs the readable-diagrams quality gate before each commit
 └── skills/
     └── readable-diagrams/               skill "readable-diagrams"
         ├── SKILL.md                     the instructions Claude reads when the skill runs
-        ├── HOW-IT-WORKS.md              for people: one build, step by step
-        ├── .gitignore                   keeps Python caches out of git, so a copied skill stays clean
+        ├── HOW-IT-WORKS.md              for people: the SVG workflow, step by step
+        ├── .gitignore                   excludes Python caches from the skill folder
         ├── references/
         │   └── layout.md                layout numbers, read only when needed
         ├── sample/                      a small spec and the pictures it makes
         └── scripts/                     the code the skill runs
-            ├── diagramlib.py            the drawing library: hand-laid-out SVG in one house style
-            ├── render.py                one command: builds a spec, draws its PNGs with rsvg-convert, prints the Markdown
+            ├── diagramlib.py            creates hand-laid-out SVGs with a consistent layout
+            ├── render.py                builds final SVGs with embedded source metadata and prints Markdown
             ├── example_spec.py          a worked example with three diagrams; copy it to start a set
-            ├── embed_spec.py            puts a spec and its Mermaid text inside a PNG as text chunks, and gets them back
-            ├── doctor.sh                checks the Mac: Python, rsvg-convert and the fonts
+            ├── embed_spec.py            embeds/extracts SVG sources and reads legacy PNG metadata
+            ├── migrate_png_to_svg.py    recovers sources from legacy PNGs and creates SVGs
+            ├── doctor.sh                checks Python and warns when expected fonts are missing
+            ├── quality-gate.sh          runs the readable-diagrams unit tests
             └── tests/
-                ├── test_diagramlib.py   checks the example and the sample build, and the text checks refuse what they should
-                ├── test_embed_spec.py   checks the spec and Mermaid text go into a PNG once and come back byte for byte
-                └── pngs.py              a PNG small enough to build by hand, for the tests
+                ├── test_diagramlib.py   checks diagram layout, rendering, and generated SVGs
+                ├── test_embed_spec.py   checks SVG source extraction and CLI behavior
+                ├── test_svg_metadata.py checks SVG metadata encoding, extraction, and failure handling
+                ├── test_migrate_png_to_svg.py checks legacy PNG migration
+                ├── test_render_svg.py   checks document rendering and embedded sources
+                └── pngs.py              small PNG fixtures for migration tests
 ```
 
-The `.gitignore` at the top keeps Python caches and local tool folders out of git. Each skill also keeps its own `.gitignore`, so a skill folder copied on its own stays clean. A new skill is a new folder under `skills/`, with its own `SKILL.md` and its own `.gitignore`.
+The root `.gitignore` excludes Python caches and local tool files. Each skill also has a `.gitignore`, so it stays clean when copied elsewhere. To add a skill, create a folder under `skills/` with a `SKILL.md` and `.gitignore`.
 
-## Check a change
+## Run checks
 
 ```bash
 claude plugin validate .
-cd skills/readable-diagrams/scripts && python3 -m unittest discover -s tests -t .
+bash skills/readable-diagrams/scripts/quality-gate.sh
 ```
+
+To run the tests automatically before each commit, enable the local hook once:
+
+```bash
+git config --local core.hooksPath .githooks
+```
+
+The hook runs the tests before each commit and blocks the commit if they fail. GitHub Actions runs the same tests on pull requests and pushes to `main`. To block merges when the tests fail, make `quality-gate / readable-diagrams tests` a required status check in the repository's branch rules.

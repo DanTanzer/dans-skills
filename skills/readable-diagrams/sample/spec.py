@@ -15,20 +15,19 @@ ROW_A, ROW_B, H = 120, 290, 410
 COLS = (40, 370, 700)  # three columns, 260 wide, 70 apart: room for one arrow and one short label
 W = 260
 
-DATA_FLOW_ALT = ("Data flow of one build for design.md. Claude writes design.spec.py, render.py reads it and writes an SVG "
-                 "for each diagram and theme in a temporary folder, rsvg-convert draws each SVG as a PNG in "
-                 "readable-diagrams/design next to design.md with the spec and the Mermaid text inside, and Claude looks "
-                 "at each PNG.")
+DATA_FLOW_ALT = ("Data flow of one build for design.md. Claude writes design.spec.py, render.py builds an SVG for each "
+                 "diagram and theme, embeds the Python and Mermaid sources, and saves the final SVGs in "
+                 "readable-diagrams/design next to design.md.")
 
 DATA_FLOW_MERMAID = """flowchart LR
   you(["You"])
   subgraph mac["YOUR MAC"]
     claude["Claude session + skill"] -->|writes| spec[("design.spec.py")]
     spec -->|reads| render["render.py + diagramlib"]
-    render -->|writes| build[("a temporary folder: an .svg per theme, .mmd")]
-    build -->|reads| exporter["rsvg-convert"]
-    exporter -->|writes| pngs[("readable-diagrams/design/: the PNGs design.md shows, spec and Mermaid inside")]
-    pngs -->|looks at each| claude
+    render -->|writes| build[("a temporary folder: SVGs and .mmd")]
+    build -->|saves| svgs[("readable-diagrams/design/: final SVGs with source metadata")]
+    svgs -->|references| doc[("design.md: SVG links and Mermaid blocks")]
+    doc -->|inspects| claude
   end
   you -->|words| claude
   claude -->|report| you"""
@@ -48,41 +47,36 @@ def data_flow():
     c.arrow(COLS[1] + W, ROW_A + 36, COLS[2], ROW_A + 36, "file").label(665, ROW_A + 28, "reads", "middle")
     # down the right side, then row B, right to left
     c.arrow(830, ROW_A + 72, 830, ROW_B, "file").label(840, ROW_A + 126, "writes")
-    c.store(COLS[2], ROW_B, W, 72, "a temporary folder", "an .svg per theme, and .mmd")
-    c.box(COLS[1], ROW_B, W, 72, "rsvg-convert", [("librsvg: one PNG per SVG", "ts")])
-    c.store(COLS[0], ROW_B, W, 72, "readable-diagrams/design/", "the PNGs, spec + Mermaid inside")
-    c.arrow(COLS[2], ROW_B + 36, COLS[1] + W, ROW_B + 36, "file").label(665, ROW_B + 28, "reads", "middle")
-    c.arrow(COLS[1], ROW_B + 36, COLS[0] + W, ROW_B + 36, "file").label(335, ROW_B + 28, "writes", "middle")
-    # and back up the left side: Claude looks at every picture before it goes in a document
-    c.arrow(170, ROW_B, 170, ROW_A + 72, "file").label(180, ROW_A + 126, "looks at each")
+    c.store(COLS[2], ROW_B, W, 72, "temporary folder", "SVGs and Mermaid text")
+    c.store(COLS[1], ROW_B, W, 72, "readable-diagrams/design/", "final SVGs with source metadata")
+    c.store(COLS[0], ROW_B, W, 72, "design.md", "SVG links and Mermaid blocks")
+    c.arrow(COLS[2], ROW_B + 36, COLS[1] + W, ROW_B + 36, "file").label(665, ROW_B + 28, "saves", "middle")
+    c.arrow(COLS[1], ROW_B + 36, COLS[0] + W, ROW_B + 36, "file").label(335, ROW_B + 28, "links", "middle")
+    # and back up the left side: Claude checks the final SVGs before sharing them
+    c.arrow(170, ROW_B, 170, ROW_A + 72, "file").label(180, ROW_A + 126, "inspects")
     return c.svg()
 
 
 # ====================================================================================== the sequence
 LIFELINES = [("U", "You", ""), ("C", "Claude", "session + skill"), ("R", "render.py", "Python + diagramlib"),
-             ("F", "Files", "on this Mac"), ("X", "rsvg-convert", "from librsvg")]
+             ("F", "Files", "on this Mac")]
 
 BUILD = {
     "id": "build", "title": "One build, in order", "lifelines": LIFELINES,
-    "caption": "Claude writes the spec in its scratch folder and runs render.py. render.py draws an SVG for each "
-               "diagram, then runs rsvg-convert once for each, which writes the PNG into readable-diagrams/design next to the "
-               "doc. render.py puts the spec and the Mermaid text inside each PNG and removes its temporary files. "
-               "Claude looks at each PNG, then pastes the Markdown into the doc.",
+    "caption": "Claude writes the spec in its scratch folder and runs render.py. The command builds SVGs, embeds their "
+               "Python and Mermaid sources, saves the final files, and prints Markdown for the document.",
     "rows": [
         ("msg", "U", "C", "\"draw how the parts talk\"", "say"),
-        ("msg", "C", "F", "writes design.spec.py in its scratch folder", "file"),
-        ("msg", "C", "R", "render.py --doc design.md", "say"),
+        ("msg", "C", "F", "writes design.spec.py in SCRATCH", "file"),
+        ("msg", "C", "R", "render.py --doc docs/design.md", "say"),
         ("msg", "R", "F", "reads design.spec.py", "file"),
-        ("note", "R", ["draws every box and arrow,", "checks the text in each box"]),
-        ("msg", "R", "F", "writes svg and mmd, temp", "file"),
-        ("msg", "R", "X", "rsvg-convert, once per svg", "say"),
-        ("note", "X", ["at twice the size: 920", "units become 1840 pixels"]),
-        ("msg", "X", "F", "reads an svg, writes its PNG", "file"),
-        ("msg", "R", "F", "puts spec + Mermaid in PNGs", "file"),
+        ("note", "R", ["draws diagrams and checks text,", "builds one SVG per theme"]),
+        ("msg", "R", "F", "embeds Python + Mermaid metadata", "file"),
+        ("msg", "R", "F", "saves final SVGs next to the doc", "file"),
         ("msg", "R", "F", "removes the temporary files", "file"),
-        ("msg", "R", "C", "2 PNGs, the Markdown", "say"),
-        ("msg", "C", "F", "looks at each PNG once", "file"),
-        ("msg", "C", "U", "the pictures, in your doc", "say"),
+        ("msg", "R", "C", "prints Markdown for the doc", "say"),
+        ("msg", "C", "F", "inspects SVGs, updates the doc", "file"),
+        ("msg", "C", "U", "the doc and its diagrams", "say"),
     ],
 }
 

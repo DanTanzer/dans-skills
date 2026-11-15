@@ -3,13 +3,13 @@
 A diagram is Python that places every box and arrow (a data flow) or a list of rows (a sequence). The library turns it
 into one self-contained SVG per theme, light and dark: the diagram on its card, under the legend entries for the arrow
 kinds it uses, with the house style inside the file. Any SVG reader draws such a file the same way, and render.py
-turns each one into a PNG with rsvg-convert. diagramlib also writes the Mermaid fallback text.
+writes the final SVGs with embedded source metadata. diagramlib also writes the Mermaid fallback text.
 
 Why hand layout and not Mermaid: Mermaid places every box itself, so lines can cross and labels sit on top of
 the lines, and it has no legend. A picture that people read again and again is worth placing by hand.
 
 Standard library only. Every width check uses an average character width for Arial, so a label that clearly
-overflows fails here, at build time; the look at each PNG catches one that is close.
+overflows fails here, at build time; inspecting each SVG catches one that is close.
 """
 import html
 import math
@@ -22,9 +22,8 @@ import re
 # characters runs 0.84 to 1.22 times its estimate. Menlo advances 0.602 em, so its three widths are exact.
 # zt, the zone title, is bold capitals with 0.1 em letter-spacing, and sits near the top instead: measured in Chrome
 # on 39 such titles, it runs 8.7 to 11.1 a character, median 10.0, and only 6 of the 39 run past 10.4.
-# rsvg-convert, which draws the PNGs now, lays text out exactly as Chrome did: on 145 labels and titles, every advance
-# matches Chrome's within 0.05 percent, except that a letter-spaced title ends 1.3 sooner: rsvg adds no space after
-# the last letter. So these widths stand.
+# A comparison with Chrome on 145 labels and titles showed every advance within 0.05 percent, except that a letter-spaced
+# title ends 1.3 sooner in SVG rendering. These width estimates remain suitable for the build-time fit checks.
 CHAR_W = {"t": 6.2, "tb": 7.0, "ts": 5.6, "sm": 5.6, "tm": 8.43, "tmb": 9.03, "tmsm": 7.53, "zt": 10.4}
 
 # Arial's advance for each printable ASCII character, space to tilde, in 1/2048 em, read from Arial.ttf. Only the
@@ -397,7 +396,7 @@ def theme_css(theme):
 # The four arrow meanings. A diagram's legend shows only the kinds it uses.
 LEGEND_TEXT = {"file": "a file written or read", "ring": "a ring (a nudge only)", "say": "a person's words, or Claude's report", "loc": "kept on one machine only"}
 
-CARD_W = 920       # units; the PNG is twice this, 1840 pixels
+CARD_W = 920       # SVG viewBox units
 DIAGRAM_W = 898     # the diagram inside the card: a 1-unit edge, then 10 on each side
 LEGEND_ROW = 22.4  # one legend row; rows are 6 apart, and the entries in a row 18 apart
 
@@ -438,8 +437,8 @@ def _placed(svg, x, y, width):
 
 def card(svg, theme, legend_texts=None, label=""):
     """One diagram as a self-contained SVG in one theme: its own style sheet, the card behind everything, the legend
-    entries for the arrow kinds the diagram uses, then the diagram. 920 units wide, so rsvg-convert --zoom 2 gives
-    1840 pixels. Outside the card's rounded corners the picture is transparent."""
+    entries for the arrow kinds the diagram uses, then the diagram. The card is 920 units wide and transparent outside
+    its rounded corners."""
     if theme not in THEMES:
         raise DiagramError(f"theme {theme!r}: use one of {tuple(THEMES)}")
     kinds = used_kinds(svg)
@@ -453,7 +452,7 @@ def card(svg, theme, legend_texts=None, label=""):
 
 
 # ====================================================================================== embedding in Markdown
-THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg, and the PNGs made from them
+THEME_SUFFIX = {"light": "", "dark": "-dark"}  # <stem>.svg and <stem>-dark.svg
 BOTH = ("light", "dark")
 
 
@@ -482,7 +481,7 @@ def picture_block(stem, alt, folder, mermaid=None, themes=BOTH):
 # ====================================================================================== building from a spec
 def mmd_text(mermaid):
     """The text of a diagram's .mmd file: its Mermaid and a final newline, or None for a diagram with no Mermaid text.
-    The file and the copy inside each PNG are this one text."""
+    The file and the copy in the SVG metadata are this one text."""
     return mermaid + "\n" if mermaid else None
 
 
