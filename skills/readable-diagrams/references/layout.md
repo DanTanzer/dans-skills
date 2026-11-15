@@ -1,6 +1,6 @@
-# Layout cookbook
+# Layout guide
 
-The numbers behind `example_spec.py`, so a new diagram can start from them instead of from zero. All diagrams are 1000 units wide.
+This guide lists the measurements and layout patterns used in `example_spec.py`. Diagrams are 1000 units wide.
 
 ## The text sizes
 
@@ -13,11 +13,11 @@ The numbers behind `example_spec.py`, so a new diagram can start from them inste
 | `tm tb` | a file or folder name in a big store box | 15px mono bold | 9.03 |
 | `tm tb sm` | a file name in a small store box | 12.5px mono bold | 7.53 |
 
-`diagramlib.must_fit` uses these. For Arial they sit near the median width, so a label at its limit can run a little long; the look at each PNG catches that. `zt` is the exception: it sits near the widest capitals, because a subtitle that follows the title is placed by it.
+`diagramlib.must_fit` uses these measurements. Arial widths are near the median, so labels at the limit may be slightly too long. Review those labels in the SVG. `zt` uses a wider estimate to leave space for the zone subtitle.
 
-## A data flow with machines across the top and a store across the bottom
+## Data flow layout
 
-The example places three 300-wide panels at x = 20, 350 and 680 with a 30 gap, and the store zone at the full width below. The rows inside a panel, from the top:
+The example uses three 300-unit panels at x = 20, 350, and 680, with 30 units between them. The store zone spans the full width below. Panel rows, from top to bottom:
 
 | Row | y | Height | What |
 |---|---|---|---|
@@ -34,13 +34,13 @@ The example places three 300-wide panels at x = 20, 350 and 680 with a 30 gap, a
 | row A | 560 | 70 | processes in the store zone: a server, a page |
 | row B | 660 | 110 | the files: 380, 200 and 300 wide with 20 gaps |
 
-The session and script heights come from `box_height`, the exact height their text needs: a box's last line sits 16 above its bottom edge.
+Use `box_height` to size the session and script boxes. The last line of text sits 16 units above the bottom edge.
 
-Two machines: use 450-wide panels at x = 20 and 530, and mirror the right panel so both scripts face the middle. Four machines: 230-wide panels at x = 20, 265, 510 and 755, with the local files below the script instead of beside it.
+For two machines, use 450-unit panels at x = 20 and 530. Flip the right panel so both scripts face the center. For four machines, use 230-unit panels at x = 20, 265, 510, and 755. Place local files below each script.
 
-## A sequence
+## Sequence layout
 
-Lifelines are spread evenly between x = 60 and x = 910. The person, the lifeline with no subtitle, is drawn as the pill. Each message row takes 44 units and each note 66. A note is 250 wide and is pulled inside the picture when its lifeline is near an edge.
+Place lifelines evenly between x = 60 and x = 910. Show a person without a subtitle as a pill. Each message row is 44 units high; each note is 66 units high and 250 units wide. Move a note inward when its lifeline is near an edge.
 
 Gaps between neighbours for 4 and 5 lifelines, and the label length that fits:
 
@@ -49,22 +49,22 @@ Gaps between neighbours for 4 and 5 lifelines, and the label length that fits:
 | 4 | 283 | 43 | 89 |
 | 5 | 212 | 31 | 66 |
 
-Keep one story per sequence. When a flow has two parts (an exchange, then a broadcast), make two diagrams. A sequence longer than about 14 rows is two diagrams.
+Keep each sequence focused on one process. If a flow has two parts, such as an exchange followed by a broadcast, use two diagrams. Split sequences longer than about 14 rows.
 
 ## Arrow kinds
 
 | Kind | Looks | Means |
 |---|---|---|
 | `file` | teal, solid | a file is written or read, over any transport |
-| `ring` | amber, dashed | a nudge between sessions that carries no content |
+| `ring` | amber, dashed | a signal between sessions that carries no content |
 | `say` | ink, solid | a person's words, or Claude's report back |
 | `loc` | grey, dashed, thin | data that stays on one machine |
 
-A two-headed arrow (`both=True`) means read and write, or a nudge that goes either way.
+A two-headed arrow (`both=True`) means read and write, or a signal that goes in both directions.
 
 ## Elbows
 
-A straight arrow is the first choice: move a box until the two ends share an x or a y. Look at the picture before you bend a line, because a box shifted a little left or right often lines the two ends up. When they cannot line up, because lining them up would break another row or column, the arrow is an elbow, not a diagonal. `elbow()` takes the same points, kind and `both` as `arrow()`, and draws the link with right-angle bends.
+Prefer straight arrows. Move boxes so the endpoints share an x or y coordinate. If that would disrupt the layout, use `elbow()` to draw right-angle bends. It accepts the same points, kind, and `both` options as `arrow()`.
 
 | Shape | Call | Use it for |
 |---|---|---|
@@ -76,12 +76,12 @@ Where the bend goes:
 
 - The middle run sits in the gap between the two rows, or the two columns, never through a box and never along a box's edge. Halfway is the default; `at` moves it: a y for `first="v"`, an x for `first="h"`.
 - Leave a box from the edge that faces the other box: the bottom or top edge between rows, a side between columns. End on the other box's edge, not short of it.
-- Two elbows through the same gap get lanes of their own, at least 12 apart, so they never merge into one line.
+- Separate elbows that use the same gap by at least 12 units.
 - The leg with the arrowhead is at least 16 long, so the head has room; a shorter one stops the build. With `both=True`, the first leg too.
 - Label the longest leg: above a run across, beside a run down, as with a straight arrow.
 
-`arrow()` refuses a diagonal. Pass `diagonal=True` only when the diagonal is the point, such as many arrows fanning into one box, where elbows would share legs.
+`arrow()` rejects diagonal lines by default. Set `diagonal=True` only when the layout requires them, for example when several arrows connect to one box and elbows would overlap.
 
-## The export card
+## SVG card dimensions
 
-diagramlib builds one card per diagram and theme: the legend entries that diagram uses, then the diagram, on the surface colour with a one-unit border, 920 wide. The diagram inside is 898 wide, so a 1000-wide diagram draws at 0.898. Legend entries flow like words, 18 apart, and wrap to a second row when they need it. `rsvg-convert --zoom 2` draws the card at 1840 pixels, transparent outside its rounded corners. A diagram that uses only `file` and `say` gets a two-entry legend.
+diagramlib builds one card per diagram and theme: the legend entries that diagram uses, then the diagram, on the surface colour with a one-unit border, 920 units wide. The diagram inside is 898 units wide, so a 1000-unit diagram draws at 0.898 scale. Legend entries are spaced 18 units apart and wrap to a second row when needed. The standalone SVG is transparent outside its rounded corners. A diagram that uses only `file` and `say` has a two-entry legend.

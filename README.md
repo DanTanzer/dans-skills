@@ -6,29 +6,29 @@ Claude Code skills by Dan Tanzer.
 
 | Skill | What it does |
 |---|---|
-| `readable-diagrams` | Draws hand-laid-out SVG diagrams and embeds the authoritative Python spec and Mermaid source in each final SVG. Includes a one-time helper for recovering sources from legacy PNGs. |
+| `readable-diagrams` | Creates hand-laid-out SVG diagrams and stores the Python spec and Mermaid source in each SVG. Includes a one-time tool for migrating older PNG diagrams. |
 
-Before and after, for the same data flow. Click a picture for the step-by-step walkthrough.
+Compare two versions of the same data flow. Select an image to open the workflow guide.
 
 <table>
   <tr>
-    <th>Before: Mermaid's own layout</th>
-    <th>After: <code>readable-diagrams</code></th>
+    <th>Mermaid</th>
+    <th>readable-diagrams</th>
   </tr>
   <tr>
     <td>
-      <a href="skills/readable-diagrams/HOW-IT-WORKS.md#from-this-mermaids-own-drawings">
+      <a href="skills/readable-diagrams/HOW-IT-WORKS.md#the-workflow-at-a-glance">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-mermaid-dark.png">
-          <img src="skills/readable-diagrams/sample/diagrams/data-flow-mermaid.png" width="400" alt="Before: the data flow drawn by Mermaid, one long thin strip with small text.">
+          <img src="skills/readable-diagrams/sample/diagrams/data-flow-mermaid.png" width="400" alt="Data flow rendered with Mermaid's automatic layout.">
         </picture>
       </a>
     </td>
     <td>
-      <a href="skills/readable-diagrams/HOW-IT-WORKS.md#to-this-the-skills-drawings">
+      <a href="skills/readable-diagrams/HOW-IT-WORKS.md#the-workflow-at-a-glance">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.png">
-          <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="400" alt="After: the same data flow drawn by readable-diagrams, with a legend and every box placed by hand.">
+          <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.svg">
+          <img src="skills/readable-diagrams/sample/diagrams/data-flow.svg" width="400" alt="The same data flow rendered with readable-diagrams, with a legend and manually placed boxes.">
         </picture>
       </a>
     </td>
@@ -41,11 +41,11 @@ Before and after, for the same data flow. Click a picture for the step-by-step w
 claude plugin install dans-skills --marketplace DanTanzer/dans-skills
 ```
 
-Then type `/reload-plugins` in the session. The one-step line needs Claude Code 2.1.275 or later. On an older version, run `claude plugin marketplace add DanTanzer/dans-skills`, then `claude plugin install dans-skills@dans-skills`.
+Then run `/reload-plugins` in your session. The one-step install requires Claude Code 2.1.275 or later. For an older version, run `claude plugin marketplace add DanTanzer/dans-skills`, then `claude plugin install dans-skills@dans-skills`.
 
 ### With the skills CLI
 
-You can also install the skill with Vercel's [`skills`](https://github.com/vercel-labs/skills) CLI.
+You can also install the skill with Vercel's [`skills`](https://github.com/vercel-labs/skills) CLI:
 
 For all your projects:
 
@@ -59,17 +59,17 @@ For the repo you're in:
 npx skills add DanTanzer/dans-skills --skill readable-diagrams -a claude-code
 ```
 
-## Before the first picture
+## Before you render
 
-The SVG workflow uses Python's standard library and does not require `rsvg-convert`.
+The SVG workflow uses Python's standard library. It does not need `rsvg-convert` or other rendering tools.
 
-[`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) is a historical walkthrough of the legacy PNG workflow; the installed skill contains the current SVG-first instructions.
+See [`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) for the workflow and PNG migration steps.
 
 ## Try it
 
-Ask Claude in your own words. The SVGs are light (white) unless you ask for dark ones or both. They go in a `readable-diagrams/` folder next to the doc, with one subfolder for each doc, such as `readable-diagrams/design/` for `design.md`. Each SVG carries the Python spec and Mermaid source in metadata, so the SVG is the final artifact to keep.
+Ask Claude to create a diagram. By default, it creates a light SVG; you can request a dark version or both. Files go in a `readable-diagrams/` folder beside the document, with a subfolder for each document. For example, diagrams for `design.md` go in `readable-diagrams/design/`. Each SVG includes the Python spec and Mermaid source in its metadata.
 
-To migrate legacy PNG diagrams in a folder, run `python3 -I scripts/migrate_png_to_svg.py PATH/TO/FOLDER` from the installed skill directory. It recovers embedded sources and generates an SVG when the matching SVG is missing. It leaves the PNG in place; only PNGs with readable-diagrams source metadata can be migrated. Run this only on PNGs whose embedded Python source you trust, because rendering executes that source. The helper is an import/migration path, not a way to synchronize later edits made directly to an SVG.
+To migrate older PNG diagrams, run `python3 -I scripts/migrate_png_to_svg.py PATH/TO/FOLDER` from the installed skill directory. The tool recovers embedded sources and creates an SVG if one is missing. It leaves the PNG in place and only supports PNGs with readable-diagrams metadata. Review the embedded Python before migrating; rendering runs that code. This tool does not sync later edits to an SVG back to its source.
 
 To draw the sample that comes with the skill:
 
@@ -91,27 +91,27 @@ Use readable-diagrams to redraw the Mermaid diagram in @README.md.
 
 ## How a picture gets made
 
-Claude writes a small Python spec. The skill draws the spec as an SVG and embeds both the Python and Mermaid sources in the SVG metadata. The SVG is kept beside the doc, and the Mermaid text also sits under the picture in the doc, ready to edit. For later changes, update the Python spec and Mermaid together and rerender; editing the SVG image alone cannot update either source.
+Claude writes a small Python spec. The skill draws the spec as an SVG and embeds both the Python and Mermaid sources in the SVG metadata. The SVG is saved beside the document, and the Mermaid text appears below it. To change a diagram, update the Python spec and Mermaid text, then rerender. Editing the SVG alone does not update either source.
 
 The data flow of one build, drawn by the skill:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.png">
-  <img src="skills/readable-diagrams/sample/diagrams/data-flow.png" width="800" alt="Data flow of one build for design.md. Claude writes design.spec.py, render.py builds an SVG for each diagram and theme, embeds the spec and Mermaid source in each SVG, and saves the SVGs beside design.md.">
+  <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/data-flow-dark.svg">
+  <img src="skills/readable-diagrams/sample/diagrams/data-flow.svg" width="800" alt="A build for design.md: Claude writes design.spec.py, render.py builds an SVG for each diagram and theme, embeds the source, and saves the SVGs beside design.md.">
 </picture>
 
 The same build, in order:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/build-sequence-dark.png">
-  <img src="skills/readable-diagrams/sample/diagrams/build-sequence.png" width="800" alt="One build, in order. Claude writes the spec in its scratch folder and runs render.py. render.py builds the SVGs, embeds the spec and Mermaid source in each, saves them beside the doc, and prints Markdown to paste into the doc.">
+  <source media="(prefers-color-scheme: dark)" srcset="skills/readable-diagrams/sample/diagrams/build-sequence-dark.svg">
+  <img src="skills/readable-diagrams/sample/diagrams/build-sequence.svg" width="800" alt="Build sequence: Claude writes the spec, runs render.py, reviews the generated SVGs, and adds the printed Markdown to the document.">
 </picture>
 
-[`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) walks through every step, with the Mermaid text for both pictures.
+[`HOW-IT-WORKS.md`](skills/readable-diagrams/HOW-IT-WORKS.md) has the full steps and commands.
 
 ## Contributing
 
-To fix a skill or add a new one, start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+To update a skill or add one, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
